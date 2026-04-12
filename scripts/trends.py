@@ -53,22 +53,37 @@ def analyze():
         bar = "█" * int(v / 2)
         print(f"  {k:<15} {v:5.1f}  {bar}")
 
-    # 결과 저장
-    result = {
-        "fetched_at": datetime.now().isoformat(),
-        "timeframe": "today 12-m",
-        "global": global_all,
-        "korea": kr_all,
-    }
+    # DB에 저장
+    import uuid
+    import psycopg2
+    from psycopg2.extras import Json
+    from dotenv import load_dotenv
+    load_dotenv()
 
-    os.makedirs(DATA_DIR, exist_ok=True)
-    filename = f"trends_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-    filepath = os.path.join(DATA_DIR, filename)
-    with open(filepath, "w", encoding="utf-8") as f:
-        json.dump(result, f, ensure_ascii=False, indent=2)
+    data = {"global": global_all, "korea": kr_all}
 
-    print(f"\n결과 저장: {filepath}")
-    return result
+    database_url = os.getenv("DATABASE_URL")
+    if database_url:
+        conn = psycopg2.connect(database_url)
+    else:
+        conn = psycopg2.connect(
+            host=os.getenv("PG_HOST", "localhost"),
+            port=int(os.getenv("PG_PORT", "5432")),
+            user=os.getenv("PG_USER", "youheaukjun"),
+            password=os.getenv("PG_PASSWORD", ""),
+            dbname=os.getenv("PG_DATABASE", "quotes_db"),
+        )
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO trends (id, fetched_at, timeframe, data) VALUES (%s, %s, %s, %s)",
+        (str(uuid.uuid4()), datetime.now(), "today 12-m", Json(data)),
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    print(f"\n결과 DB 저장 완료")
+    return data
 
 
 if __name__ == "__main__":

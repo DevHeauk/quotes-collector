@@ -198,17 +198,18 @@ def recent():
 
 @app.route("/api/trends")
 def trends():
-    trends_dir = os.path.join(os.path.dirname(__file__), "..", "data", "trends")
-    trends_dir = os.path.abspath(trends_dir)
-    try:
-        files = sorted(glob.glob(os.path.join(trends_dir, "*.json")))
-        if not files:
-            return jsonify({"error": "트렌드 데이터가 없습니다."}), 404
-        with open(files[-1], "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return jsonify(data)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT fetched_at::text, timeframe, data FROM trends ORDER BY fetched_at DESC LIMIT 1")
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    if not row:
+        return jsonify({"error": "트렌드 데이터가 없습니다."}), 404
+    result = row[2] if isinstance(row[2], dict) else json.loads(row[2])
+    result["fetched_at"] = row[0]
+    result["timeframe"] = row[1]
+    return jsonify(result)
 
 
 @app.route("/")
