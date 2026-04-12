@@ -327,7 +327,16 @@ def find_similar(cursor, text: str, text_original: str | None) -> tuple[bool, st
 # 저장
 # ---------------------------------------------------------------------------
 
-def save_quotes(quotes: list[dict], masters: dict, dry_run: bool = False) -> dict:
+def determine_source_reliability(quote: dict) -> str:
+    """출처 정보로 신뢰도를 판정한다."""
+    source = quote.get("source")
+    if not source:
+        return "unknown"
+    # 책, 연설, 서신 등 구체적 출처가 있으면 attributed
+    return "attributed"
+
+
+def save_quotes(quotes: list[dict], masters: dict, dry_run: bool = False, collection_log_id: str | None = None) -> dict:
     """명언 목록을 PostgreSQL에 저장한다."""
     stats = {"saved": 0, "duplicates": 0, "errors": 0}
 
@@ -335,9 +344,11 @@ def save_quotes(quotes: list[dict], masters: dict, dry_run: bool = False) -> dic
         for q in quotes:
             kws = q.get("keywords", [])
             sits = q.get("situation", [])
+            rel = determine_source_reliability(q)
             print(f"  [{q['author']['name']}] {q['text'][:50]}...")
             print(f"    키워드: {kws}")
             print(f"    상황: {sits}")
+            print(f"    출처 신뢰도: {rel}")
         stats["saved"] = len(quotes)
         return stats
 
@@ -358,11 +369,12 @@ def save_quotes(quotes: list[dict], masters: dict, dry_run: bool = False) -> dic
             keyword_ids = resolve_keyword_ids(cursor, q.get("keywords", []), masters)
             situation_ids = resolve_situation_ids(cursor, q.get("situation", []), masters)
 
+            reliability = determine_source_reliability(q)
             quote_id = str(uuid.uuid4())
             cursor.execute(
                 """INSERT INTO quotes (id, text, text_original, original_language, author_id, source, year,
-                   keywords, situation, keyword_ids, situation_ids)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                   keywords, situation, keyword_ids, situation_ids, status, source_reliability, collection_log_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     quote_id,
                     q["text"],
@@ -375,6 +387,9 @@ def save_quotes(quotes: list[dict], masters: dict, dry_run: bool = False) -> dic
                     json.dumps(q.get("situation", []), ensure_ascii=False),
                     keyword_ids,
                     situation_ids,
+                    "draft",
+                    reliability,
+                    collection_log_id,
                 ),
             )
             stats["saved"] += 1
@@ -392,14 +407,30 @@ def save_quotes(quotes: list[dict], masters: dict, dry_run: bool = False) -> dic
 # 수집 이력 로그
 # ---------------------------------------------------------------------------
 
-def log_collection(category: str, requested: int, stats: dict):
-    """수집 이력을 DB에 기록한다."""
+def create_collection_log(category: str, requested: int) -> str:
+    """수집 시작 시 이력 레코드를 생성하고 ID를 반환한다."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    log_id = str(uuid.uuid4())
+    cur.execute(
+        """INSERT INTO collection_logs (id, category, requested_count, saved_count, duplicate_count, error_count)
+        VALUES (%s, %s, %s, 0, 0, 0)""",
+        (log_id, category, requested),
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+    return log_id
+
+
+def update_collection_log(log_id: str, stats: dict):
+    """수집 완료 후 이력 레코드를 업데이트한다."""
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute(
-        """INSERT INTO collection_logs (id, category, requested_count, saved_count, duplicate_count, error_count)
-        VALUES (%s, %s, %s, %s, %s, %s)""",
-        (str(uuid.uuid4()), category, requested, stats["saved"], stats["duplicates"], stats["errors"]),
+        """UPDATE collection_logs SET saved_count = %s, duplicate_count = %s, error_count = %s
+        WHERE id = %s""",
+        (stats["saved"], stats["duplicates"], stats["errors"], log_id),
     )
     conn.commit()
     cur.close()
@@ -433,14 +464,18 @@ def collect(category_filter: str | None = None, dry_run: bool = False):
         print(f"{'='*50}")
 
         try:
+            log_id = None
+            if not dry_run:
+                log_id = create_collection_log(category, count)
+
             quotes = fetch_quotes_from_claude(category, count, item["prompt_hint"], system_prompt)
             print(f"  Claude 응답: {len(quotes)}개")
 
-            stats = save_quotes(quotes, masters, dry_run=dry_run)
+            stats = save_quotes(quotes, masters, dry_run=dry_run, collection_log_id=log_id)
             print(f"  저장: {stats['saved']}개 | 중복: {stats['duplicates']}개 | 오류: {stats['errors']}개")
 
             if not dry_run:
-                log_collection(category, count, stats)
+                update_collection_log(log_id, stats)
 
             for key in total_stats:
                 total_stats[key] += stats[key]

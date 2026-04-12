@@ -30,6 +30,17 @@ CREATE TABLE IF NOT EXISTS situations (
     group_name VARCHAR(100)
 );
 
+-- 수집 이력
+CREATE TABLE IF NOT EXISTS collection_logs (
+    id VARCHAR(36) PRIMARY KEY,
+    category VARCHAR(100),
+    requested_count INT,
+    saved_count INT,
+    duplicate_count INT,
+    error_count INT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- 저자
 CREATE TABLE IF NOT EXISTS authors (
     id VARCHAR(36) PRIMARY KEY,
@@ -64,22 +75,12 @@ CREATE TABLE IF NOT EXISTS quotes (
     situation JSONB NOT NULL,
     keyword_ids VARCHAR(36)[],
     situation_ids VARCHAR(36)[],
-    verified BOOLEAN DEFAULT FALSE,
-    verified_at TIMESTAMP,
+    status VARCHAR(20) NOT NULL DEFAULT 'draft',       -- draft / reviewed / published / rejected
+    source_reliability VARCHAR(20) DEFAULT 'unknown',  -- verified / attributed / disputed / unknown
+    collection_log_id VARCHAR(36) REFERENCES collection_logs(id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 유사도 검색용 trigram 인덱스
 CREATE INDEX IF NOT EXISTS idx_quotes_text_trgm ON quotes USING gin (text gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_quotes_text_original_trgm ON quotes USING gin (text_original gin_trgm_ops);
-
--- 수집 이력
-CREATE TABLE IF NOT EXISTS collection_logs (
-    id VARCHAR(36) PRIMARY KEY,
-    category VARCHAR(100),
-    requested_count INT,
-    saved_count INT,
-    duplicate_count INT,
-    error_count INT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
