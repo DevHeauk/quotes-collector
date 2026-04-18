@@ -1,4 +1,4 @@
-package com.quotesapp
+package com.devheauk.dailyquote
 
 import android.app.Application
 import com.facebook.react.PackageList
