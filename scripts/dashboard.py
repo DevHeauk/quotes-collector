@@ -12,11 +12,13 @@ import os
 
 import psycopg2
 from dotenv import load_dotenv
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
+from flask_cors import CORS
 
 load_dotenv()
 
 app = Flask(__name__)
+CORS(app)
 
 
 def get_db():
@@ -211,6 +213,232 @@ def trends():
     result["timeframe"] = row[1]
     return jsonify(result)
 
+
+# ===========================================================================
+# App API (모바일 앱 전용)
+# ===========================================================================
+
+def _quote_to_dict(row, cols):
+    """쿼리 결과를 앱용 dict로 변환."""
+    d = dict(zip(cols, row))
+    for k in ("keywords", "situations"):
+        if k in d and isinstance(d[k], str):
+            d[k] = json.loads(d[k])
+    return d
+
+
+@app.route("/app/api/v1/daily")
+def app_daily():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT setseed(extract(doy from current_date)::float / 366.0)")
+    cur.execute("""
+        SELECT q.id, q.text, q.text_original, q.original_language, q.source, q.year, q.impact_score,
+               a.name as author_name, p.name as profession, f.name as field, a.nationality, a.birth_year,
+               ARRAY(SELECT k.name FROM keywords k WHERE k.id = ANY(q.keyword_ids)) as keywords,
+               ARRAY(SELECT s.name FROM situations s WHERE s.id = ANY(q.situation_ids)) as situations
+        FROM quotes q
+        JOIN authors a ON q.author_id = a.id
+        LEFT JOIN professions p ON a.profession_id = p.id
+        LEFT JOIN fields f ON a.field_id = f.id
+        ORDER BY random() * COALESCE(q.impact_score, 3)
+        LIMIT 1
+    """)
+    cols = [d[0] for d in cur.description]
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    if not row:
+        return jsonify({"error": "명언이 없습니다."}), 404
+    d = dict(zip(cols, row))
+    return jsonify({
+        "id": d["id"], "text": d["text"], "text_original": d["text_original"],
+        "original_language": d["original_language"], "source": d["source"],
+        "year": d["year"], "impact_score": d["impact_score"],
+        "keywords": d["keywords"] or [], "situations": d["situations"] or [],
+        "author": {
+            "name": d["author_name"], "profession": d["profession"],
+            "field": d["field"], "nationality": d["nationality"], "birth_year": d["birth_year"],
+        },
+    })
+
+
+@app.route("/app/api/v1/categories")
+def app_categories():
+    return jsonify(query("""
+        SELECT k.group_name, ARRAY_AGG(DISTINCT k.name) as keywords,
+               COUNT(DISTINCT qk) as count
+        FROM keywords k
+        LEFT JOIN quotes q ON k.id = ANY(q.keyword_ids)
+        LEFT JOIN unnest(q.keyword_ids) AS qk ON true
+        GROUP BY k.group_name
+        ORDER BY count DESC
+    """))
+
+
+@app.route("/app/api/v1/situations")
+def app_situations():
+    return jsonify(query("""
+        SELECT s.group_name, ARRAY_AGG(DISTINCT s.name) as situations,
+               COUNT(DISTINCT qs) as count
+        FROM situations s
+        LEFT JOIN quotes q ON s.id = ANY(q.situation_ids)
+        LEFT JOIN unnest(q.situation_ids) AS qs ON true
+        GROUP BY s.group_name
+        ORDER BY count DESC
+    """))
+
+
+@app.route("/app/api/v1/authors")
+def app_authors():
+    page = int(request.args.get("page", 1))
+    limit = min(int(request.args.get("limit", 20)), 50)
+    offset = (page - 1) * limit
+    return jsonify(query(f"""
+        SELECT a.id, a.name, p.name as profession, f.name as field,
+               a.nationality, a.birth_year, COUNT(q.id) as quote_count
+        FROM authors a
+        LEFT JOIN professions p ON a.profession_id = p.id
+        LEFT JOIN fields f ON a.field_id = f.id
+        LEFT JOIN quotes q ON q.author_id = a.id
+        GROUP BY a.id, a.name, p.name, f.name, a.nationality, a.birth_year
+        HAVING COUNT(q.id) > 0
+        ORDER BY quote_count DESC
+        LIMIT {limit} OFFSET {offset}
+    """))
+
+
+@app.route("/app/api/v1/quotes")
+def app_quotes():
+    page = int(request.args.get("page", 1))
+    limit = min(int(request.args.get("limit", 20)), 50)
+    offset = (page - 1) * limit
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    where = []
+    params = []
+
+    keyword_group = request.args.get("keyword_group")
+    if keyword_group:
+        where.append("EXISTS (SELECT 1 FROM keywords k WHERE k.id = ANY(q.keyword_ids) AND k.group_name = %s)")
+        params.append(keyword_group)
+
+    keyword = request.args.get("keyword")
+    if keyword:
+        where.append("EXISTS (SELECT 1 FROM keywords k WHERE k.id = ANY(q.keyword_ids) AND k.name = %s)")
+        params.append(keyword)
+
+    situation = request.args.get("situation")
+    if situation:
+        where.append("EXISTS (SELECT 1 FROM situations s WHERE s.id = ANY(q.situation_ids) AND s.name = %s)")
+        params.append(situation)
+
+    situation_group = request.args.get("situation_group")
+    if situation_group:
+        where.append("EXISTS (SELECT 1 FROM situations s WHERE s.id = ANY(q.situation_ids) AND s.group_name = %s)")
+        params.append(situation_group)
+
+    author_id = request.args.get("author_id")
+    if author_id:
+        where.append("q.author_id = %s")
+        params.append(author_id)
+
+    where_clause = " AND ".join(where) if where else "1=1"
+    params.extend([limit, offset])
+
+    cur.execute(f"""
+        SELECT q.id, q.text, q.text_original, q.source, q.impact_score,
+               a.name as author_name, a.nationality,
+               ARRAY(SELECT k.name FROM keywords k WHERE k.id = ANY(q.keyword_ids)) as keywords
+        FROM quotes q
+        JOIN authors a ON q.author_id = a.id
+        WHERE {where_clause}
+        ORDER BY COALESCE(q.impact_score, 3) DESC
+        LIMIT %s OFFSET %s
+    """, params)
+
+    cols = [d[0] for d in cur.description]
+    rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+    cur.close()
+    conn.close()
+    return jsonify(rows)
+
+
+@app.route("/app/api/v1/quotes/<quote_id>")
+def app_quote_detail(quote_id):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT q.id, q.text, q.text_original, q.original_language, q.source, q.year, q.impact_score,
+               a.id as author_id, a.name as author_name, p.name as profession,
+               f.name as field, a.nationality, a.birth_year,
+               ARRAY(SELECT k.name FROM keywords k WHERE k.id = ANY(q.keyword_ids)) as keywords,
+               ARRAY(SELECT s.name FROM situations s WHERE s.id = ANY(q.situation_ids)) as situations
+        FROM quotes q
+        JOIN authors a ON q.author_id = a.id
+        LEFT JOIN professions p ON a.profession_id = p.id
+        LEFT JOIN fields f ON a.field_id = f.id
+        WHERE q.id = %s
+    """, (quote_id,))
+    cols = [d[0] for d in cur.description]
+    row = cur.fetchone()
+    if not row:
+        cur.close(); conn.close()
+        return jsonify({"error": "명언을 찾을 수 없습니다."}), 404
+
+    d = dict(zip(cols, row))
+
+    # 같은 저자의 다른 명언 3개
+    cur.execute("""
+        SELECT q.id, q.text, q.impact_score
+        FROM quotes q WHERE q.author_id = %s AND q.id != %s
+        ORDER BY COALESCE(q.impact_score, 3) DESC LIMIT 3
+    """, (d["author_id"], quote_id))
+    related = [{"id": r[0], "text": r[1], "impact_score": r[2]} for r in cur.fetchall()]
+
+    cur.close(); conn.close()
+    return jsonify({
+        "id": d["id"], "text": d["text"], "text_original": d["text_original"],
+        "original_language": d["original_language"], "source": d["source"],
+        "year": d["year"], "impact_score": d["impact_score"],
+        "keywords": d["keywords"] or [], "situations": d["situations"] or [],
+        "author": {
+            "id": d["author_id"], "name": d["author_name"], "profession": d["profession"],
+            "field": d["field"], "nationality": d["nationality"], "birth_year": d["birth_year"],
+        },
+        "related_quotes": related,
+    })
+
+
+@app.route("/app/api/v1/quotes/batch", methods=["POST"])
+def app_quotes_batch():
+    data = request.get_json()
+    ids = data.get("ids", [])[:50]
+    if not ids:
+        return jsonify([])
+
+    conn = get_db()
+    cur = conn.cursor()
+    placeholders = ",".join(["%s"] * len(ids))
+    cur.execute(f"""
+        SELECT q.id, q.text, q.text_original, q.source, q.impact_score,
+               a.name as author_name, a.nationality,
+               ARRAY(SELECT k.name FROM keywords k WHERE k.id = ANY(q.keyword_ids)) as keywords
+        FROM quotes q
+        JOIN authors a ON q.author_id = a.id
+        WHERE q.id IN ({placeholders})
+    """, ids)
+    cols = [d[0] for d in cur.description]
+    rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+    cur.close(); conn.close()
+    return jsonify(rows)
+
+
+# ===========================================================================
+# Dashboard HTML
+# ===========================================================================
 
 @app.route("/")
 def index():
