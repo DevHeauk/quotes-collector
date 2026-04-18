@@ -227,12 +227,55 @@ def _quote_to_dict(row, cols):
     return d
 
 
+def _build_personalization(args):
+    """개인화 파라미터에서 WHERE/ORDER BY 조건과 params를 빌드."""
+    sit_groups = args.get("situations", "")
+    kw_groups = args.get("keywords", "")
+    exclude_ids = args.get("exclude", "")
+    sit_list = [s.strip() for s in sit_groups.split(",") if s.strip()]
+    kw_list = [k.strip() for k in kw_groups.split(",") if k.strip()]
+    exclude_list = [e.strip() for e in exclude_ids.split(",") if e.strip()]
+
+    params = []
+    bonus_clauses = []
+    where_clauses = []
+
+    if sit_list:
+        bonus_clauses.append("""
+            CASE WHEN EXISTS (
+                SELECT 1 FROM situations s
+                WHERE s.id = ANY(q.situation_ids) AND s.group_name = ANY(%s)
+            ) THEN 3 ELSE 0 END
+        """)
+        params.append(sit_list)
+
+    if kw_list:
+        bonus_clauses.append("""
+            CASE WHEN EXISTS (
+                SELECT 1 FROM keywords k
+                WHERE k.id = ANY(q.keyword_ids) AND k.group_name = ANY(%s)
+            ) THEN 2 ELSE 0 END
+        """)
+        params.append(kw_list)
+
+    if exclude_list:
+        where_clauses.append("q.id != ALL(%s)")
+        params.append(exclude_list)
+
+    bonus_sql = " + ".join(bonus_clauses) if bonus_clauses else "0"
+    where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+    return params, bonus_sql, where_sql
+
+
 @app.route("/app/api/v1/daily")
 def app_daily():
     conn = get_db()
     cur = conn.cursor()
     cur.execute("SELECT setseed(extract(doy from current_date)::float / 366.0)")
-    cur.execute("""
+
+    params, bonus_sql, where_sql = _build_personalization(request.args)
+
+    cur.execute(f"""
         SELECT q.id, q.text, q.text_original, q.original_language, q.source, q.year, q.impact_score,
                a.name as author_name, p.name as profession, f.name as field, a.nationality, a.birth_year,
                ARRAY(SELECT k.name FROM keywords k WHERE k.id = ANY(q.keyword_ids)) as keywords,
@@ -241,9 +284,10 @@ def app_daily():
         JOIN authors a ON q.author_id = a.id
         LEFT JOIN professions p ON a.profession_id = p.id
         LEFT JOIN fields f ON a.field_id = f.id
-        ORDER BY random() * COALESCE(q.impact_score, 3)
-        LIMIT 1
-    """)
+        WHERE q.status = 'published' AND {where_sql}
+        ORDER BY (COALESCE(q.impact_score, 3) + {bonus_sql}) * random()
+        DESC LIMIT 1
+    """, params)
     cols = [d[0] for d in cur.description]
     row = cur.fetchone()
     cur.close()
@@ -261,6 +305,35 @@ def app_daily():
             "field": d["field"], "nationality": d["nationality"], "birth_year": d["birth_year"],
         },
     })
+
+
+@app.route("/app/api/v1/recommend")
+def app_recommend():
+    """개인화 추천 명언 N개 반환."""
+    conn = get_db()
+    cur = conn.cursor()
+
+    limit = min(request.args.get("limit", 3, type=int), 20)
+    params, bonus_sql, where_sql = _build_personalization(request.args)
+    params.append(limit)
+
+    cur.execute(f"""
+        SELECT q.id, q.text, q.text_original, q.original_language, q.source, q.impact_score,
+               a.name as author_name, p.name as profession, a.nationality,
+               ARRAY(SELECT k.name FROM keywords k WHERE k.id = ANY(q.keyword_ids)) as keywords,
+               ARRAY(SELECT s.name FROM situations s WHERE s.id = ANY(q.situation_ids)) as situations
+        FROM quotes q
+        JOIN authors a ON q.author_id = a.id
+        LEFT JOIN professions p ON a.profession_id = p.id
+        WHERE q.status = 'published' AND {where_sql}
+        ORDER BY (COALESCE(q.impact_score, 3) + {bonus_sql}) * random()
+        DESC LIMIT %s
+    """, params)
+    cols = [d[0] for d in cur.description]
+    rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+    cur.close()
+    conn.close()
+    return jsonify(rows)
 
 
 @app.route("/app/api/v1/categories")
@@ -291,10 +364,13 @@ def app_situations():
 
 @app.route("/app/api/v1/authors")
 def app_authors():
-    page = int(request.args.get("page", 1))
-    limit = min(int(request.args.get("limit", 20)), 50)
+    page = request.args.get("page", 1, type=int)
+    limit = min(request.args.get("limit", 20, type=int), 50)
     offset = (page - 1) * limit
-    return jsonify(query(f"""
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
         SELECT a.id, a.name, p.name as profession, f.name as field,
                a.nationality, a.birth_year, COUNT(q.id) as quote_count
         FROM authors a
@@ -304,14 +380,19 @@ def app_authors():
         GROUP BY a.id, a.name, p.name, f.name, a.nationality, a.birth_year
         HAVING COUNT(q.id) > 0
         ORDER BY quote_count DESC
-        LIMIT {limit} OFFSET {offset}
-    """))
+        LIMIT %s OFFSET %s
+    """, (limit, offset))
+    cols = [d[0] for d in cur.description]
+    rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+    cur.close()
+    conn.close()
+    return jsonify(rows)
 
 
 @app.route("/app/api/v1/quotes")
 def app_quotes():
-    page = int(request.args.get("page", 1))
-    limit = min(int(request.args.get("limit", 20)), 50)
+    page = request.args.get("page", 1, type=int)
+    limit = min(request.args.get("limit", 20, type=int), 50)
     offset = (page - 1) * limit
 
     conn = get_db()
@@ -354,7 +435,7 @@ def app_quotes():
                ARRAY(SELECT k.name FROM keywords k WHERE k.id = ANY(q.keyword_ids)) as keywords
         FROM quotes q
         JOIN authors a ON q.author_id = a.id
-        WHERE {where_clause}
+        WHERE q.status = 'published' AND {where_clause}
         ORDER BY COALESCE(q.impact_score, 3) DESC
         LIMIT %s OFFSET %s
     """, params)
@@ -428,7 +509,7 @@ def app_quotes_batch():
                ARRAY(SELECT k.name FROM keywords k WHERE k.id = ANY(q.keyword_ids)) as keywords
         FROM quotes q
         JOIN authors a ON q.author_id = a.id
-        WHERE q.id IN ({placeholders})
+        WHERE q.status = 'published' AND q.id IN ({placeholders})
     """, ids)
     cols = [d[0] for d in cur.description]
     rows = [dict(zip(cols, r)) for r in cur.fetchall()]
