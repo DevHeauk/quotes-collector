@@ -215,6 +215,23 @@ def trends():
 
 
 # ===========================================================================
+# Admin API
+# ===========================================================================
+
+@app.route("/admin/publish-all", methods=["POST"])
+def admin_publish_all():
+    """draft 상태 명언을 일괄 published로 변경."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE quotes SET status = 'published' WHERE status = 'draft'")
+    count = cur.rowcount
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"updated": count})
+
+
+# ===========================================================================
 # App API (모바일 앱 전용)
 # ===========================================================================
 
