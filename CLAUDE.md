@@ -43,10 +43,66 @@ python scripts/dashboard.py
 - `ANTHROPIC_API_KEY` — Claude API 키
 - `PG_HOST`, `PG_PORT`, `PG_USER`, `PG_PASSWORD`, `PG_DATABASE` — PostgreSQL 접속 정보
 
+## 기술 스택 상세
+
+### 백엔드 (Python)
+- **Flask** (dashboard.py 단일 파일) — 대시보드 + 앱 API + 관리자 API
+- **psycopg2** — PostgreSQL 드라이버 (ORM 없음, raw SQL)
+- **gunicorn** — 프로덕션 서버 (`Procfile`: `gunicorn scripts.dashboard:app`)
+- **anthropic SDK** — Claude API (수집, 팩트체크)
+- **배포**: Railway (내부 PostgreSQL + gunicorn)
+
+### 모바일 앱 (TypeScript)
+- **React Native 0.85** + React 19
+- **React Navigation v7** (bottom tabs + native stack)
+- **AsyncStorage** — 로컬 저장 (선호도, 좋아요, 행동 로그)
+- **Vanilla fetch** — API 호출 (axios 등 미사용)
+- 상태관리 라이브러리 없음 (useState/useRef로 충분)
+
+### 데이터베이스
+- **PostgreSQL** + pg_trgm (유사도 검색)
+- PK: UUID (VARCHAR(36))
+- 태깅: `keyword_ids VARCHAR(36)[]`, `situation_ids VARCHAR(36)[]` (배열)
+- 레거시: `keywords JSONB`, `situation JSONB` (하위 호환용, 신규 코드에서 사용 금지)
+
+## 코딩 규칙
+
+### Python (백엔드)
+
+1. **DB 패턴**: `get_db()` → `conn.cursor()` → execute → `cur.close(); conn.close()`. ORM 사용 금지.
+2. **API 응답**: 항상 `jsonify()` 사용. 리스트 API는 `{"엔티티명": [...], "total": N, "page": N}` 형식 (예: `{"quotes": [...]}`).
+3. **인증**: 관리자 API(`/admin/api/*`)는 `@require_admin` 데코레이터 필수. 환경변수 `ADMIN_TOKEN`.
+4. **에러 응답**: `jsonify({"error": "메시지"})` + 적절한 HTTP 상태코드.
+5. **SQL 안전**: 사용자 입력은 반드시 `%s` 파라미터 바인딩. f-string에 사용자 값 직접 삽입 금지.
+6. **파일 구조**: 백엔드는 `scripts/dashboard.py` 단일 파일. 분리하지 않는다.
+
+### TypeScript (앱)
+
+1. **함수형 컴포넌트 only**: class 컴포넌트 사용 금지.
+2. **네이밍**: 화면은 `XxxScreen.tsx`, 훅은 `useXxx.ts`, 저장소는 `storage/xxx.ts`.
+3. **스타일**: `StyleSheet.create()` 사용. 인라인 스타일 최소화. 색상은 `colors.ts`에서 import.
+4. **API**: `api/client.ts`의 `fetchJSON<T>()` 헬퍼 사용. 직접 fetch 호출 금지.
+5. **로컬 저장**: AsyncStorage 사용. 키 prefix `@` (예: `@favorites`, `@device_id`).
+6. **타입**: `types/index.ts`에 공유 타입 정의. any 사용 금지.
+
+### 공통
+
+1. **ID**: 모든 테이블 PK는 UUID v4 (Python: `str(uuid.uuid4())`).
+2. **날짜**: DB는 `TIMESTAMP DEFAULT CURRENT_TIMESTAMP`, 앱은 `new Date().toISOString()`.
+3. **환경변수**: `.env` + `python-dotenv`. 앱은 `constants/config.ts`.
+4. **에러 처리**: 외부 호출(DB, API, 네트워크)만 try/catch. 내부 로직에 방어적 코딩 불필요.
+
+## 배포
+
+- **백엔드**: `git push origin master` → Railway 자동 배포 (또는 `railway up`)
+- **DB 마이그레이션**: `POST /admin/migrate` 또는 Railway CLI (`railway run psql -c "..."`)
+- **환경변수**: Railway 대시보드에서 설정 (`DATABASE_URL`, `ADMIN_TOKEN`, `ANTHROPIC_API_KEY`)
+- **앱**: Android 릴리스 빌드 (`app/android/` 디렉토리)
+
 ## 주의사항
 
 - 모든 스크립트는 psycopg2 (PostgreSQL) 사용
-- keywords, situation 필드는 JSONB 타입
+- keyword_ids/situation_ids 배열 사용. 레거시 JSONB(keywords, situation) 필드는 신규 코드에서 참조 금지
 - 중복 검사: 정확 매칭 + trigram 유사도 (threshold 0.4)
 
 ## 명언 수집 규칙

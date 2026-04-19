@@ -10,6 +10,7 @@ import glob
 import json
 import os
 import uuid
+from functools import wraps
 
 import psycopg2
 from dotenv import load_dotenv
@@ -219,9 +220,24 @@ def trends():
 # Admin API
 # ===========================================================================
 
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
+
+
+def require_admin(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not ADMIN_TOKEN:
+            return jsonify({"error": "ADMIN_TOKEN not configured"}), 500
+        auth = request.headers.get("Authorization", "")
+        if auth != f"Bearer {ADMIN_TOKEN}":
+            return jsonify({"error": "unauthorized"}), 401
+        return f(*args, **kwargs)
+    return decorated
+
+
 @app.route("/admin/migrate", methods=["POST"])
 def admin_migrate():
-    """DB 마이그레이션 실행 (user_interactions 테이블 생성)."""
+    """DB 마이그레이션 실행."""
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
@@ -254,6 +270,388 @@ def admin_publish_all():
     cur.close()
     conn.close()
     return jsonify({"updated": count})
+
+
+# ---------------------------------------------------------------------------
+# Admin Console API — 명언 CRUD
+# ---------------------------------------------------------------------------
+
+@app.route("/admin/api/quotes")
+@require_admin
+def admin_quotes_list():
+    """명언 목록 (필터 + 페이지네이션)."""
+    page = request.args.get("page", 1, type=int)
+    limit = min(request.args.get("limit", 20, type=int), 100)
+    offset = (page - 1) * limit
+
+    where = []
+    params = []
+
+    status = request.args.get("status")
+    if status:
+        where.append("q.status = %s")
+        params.append(status)
+
+    keyword_group = request.args.get("keyword_group")
+    if keyword_group:
+        where.append("EXISTS (SELECT 1 FROM keywords k WHERE k.id = ANY(q.keyword_ids) AND k.group_name = %s)")
+        params.append(keyword_group)
+
+    reliability = request.args.get("reliability")
+    if reliability:
+        where.append("q.source_reliability = %s")
+        params.append(reliability)
+
+    search = request.args.get("search", "").strip()
+    if search:
+        where.append("(q.text ILIKE %s OR a.name ILIKE %s)")
+        params.extend([f"%{search}%", f"%{search}%"])
+
+    where_clause = " AND ".join(where) if where else "1=1"
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    # total count
+    cur.execute(f"""
+        SELECT COUNT(*) FROM quotes q
+        JOIN authors a ON q.author_id = a.id
+        WHERE {where_clause}
+    """, params)
+    total = cur.fetchone()[0]
+
+    cur.execute(f"""
+        SELECT q.id, q.text, q.text_original, q.original_language, q.source, q.year,
+               q.status, q.source_reliability, q.created_at::text,
+               q.keyword_ids, q.situation_ids,
+               a.id as author_id, a.name as author_name,
+               ARRAY(SELECT k.name FROM keywords k WHERE k.id = ANY(q.keyword_ids)) as keywords,
+               ARRAY(SELECT s.name FROM situations s WHERE s.id = ANY(q.situation_ids)) as situations
+        FROM quotes q
+        JOIN authors a ON q.author_id = a.id
+        WHERE {where_clause}
+        ORDER BY q.created_at DESC
+        LIMIT %s OFFSET %s
+    """, params + [limit, offset])
+    cols = [d[0] for d in cur.description]
+    rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+    cur.close()
+    conn.close()
+    return jsonify({"quotes": rows, "total": total, "page": page, "limit": limit})
+
+
+@app.route("/admin/api/quotes", methods=["POST"])
+@require_admin
+def admin_quotes_create():
+    """명언 추가."""
+    data = request.get_json()
+    text = data.get("text", "").strip()
+    author_id = data.get("author_id", "").strip()
+    if not text or not author_id:
+        return jsonify({"error": "text and author_id required"}), 400
+
+    qid = str(uuid.uuid4())
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO quotes (id, text, text_original, original_language, author_id,
+                            source, year, keywords, situation, keyword_ids, situation_ids,
+                            status, source_reliability)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, '[]'::jsonb, '[]'::jsonb, %s, %s, %s, %s)
+    """, (
+        qid, text,
+        data.get("text_original") or None,
+        data.get("original_language") or None,
+        author_id,
+        data.get("source") or None,
+        data.get("year") or None,
+        data.get("keyword_ids") or [],
+        data.get("situation_ids") or [],
+        data.get("status", "draft"),
+        data.get("source_reliability", "unknown"),
+    ))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"id": qid}), 201
+
+
+@app.route("/admin/api/quotes/<quote_id>", methods=["PATCH"])
+@require_admin
+def admin_quotes_update(quote_id):
+    """명언 개별 수정 (변경 필드만)."""
+    data = request.get_json()
+    allowed = {"text", "text_original", "original_language", "author_id",
+               "source", "year", "status", "source_reliability",
+               "keyword_ids", "situation_ids"}
+    sets = []
+    params = []
+    for key, val in data.items():
+        if key in allowed:
+            sets.append(f"{key} = %s")
+            params.append(val)
+    if not sets:
+        return jsonify({"error": "no valid fields"}), 400
+
+    params.append(quote_id)
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(f"UPDATE quotes SET {', '.join(sets)} WHERE id = %s", params)
+    if cur.rowcount == 0:
+        cur.close(); conn.close()
+        return jsonify({"error": "not found"}), 404
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"updated": True})
+
+
+@app.route("/admin/api/quotes/<quote_id>", methods=["DELETE"])
+@require_admin
+def admin_quotes_delete(quote_id):
+    """명언 삭제 (interaction cascade)."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM user_interactions WHERE quote_id = %s", (quote_id,))
+    cur.execute("DELETE FROM quotes WHERE id = %s", (quote_id,))
+    if cur.rowcount == 0:
+        cur.close(); conn.close()
+        return jsonify({"error": "not found"}), 404
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"deleted": True})
+
+
+@app.route("/admin/api/quotes/batch-status", methods=["POST"])
+@require_admin
+def admin_quotes_batch_status():
+    """일괄 상태 변경."""
+    data = request.get_json()
+    ids = data.get("ids", [])[:200]
+    status = data.get("status", "")
+    if not ids or status not in ("draft", "reviewed", "published", "rejected"):
+        return jsonify({"error": "ids and valid status required"}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+    placeholders = ",".join(["%s"] * len(ids))
+    cur.execute(f"UPDATE quotes SET status = %s WHERE id IN ({placeholders})", [status] + ids)
+    count = cur.rowcount
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"updated": count})
+
+
+@app.route("/admin/api/quotes/batch-delete", methods=["POST"])
+@require_admin
+def admin_quotes_batch_delete():
+    """일괄 삭제."""
+    data = request.get_json()
+    ids = data.get("ids", [])[:200]
+    if not ids:
+        return jsonify({"error": "ids required"}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+    placeholders = ",".join(["%s"] * len(ids))
+    cur.execute(f"DELETE FROM user_interactions WHERE quote_id IN ({placeholders})", ids)
+    cur.execute(f"DELETE FROM quotes WHERE id IN ({placeholders})", ids)
+    count = cur.rowcount
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"deleted": count})
+
+
+# ---------------------------------------------------------------------------
+# Admin Console API — 저자 CRUD
+# ---------------------------------------------------------------------------
+
+@app.route("/admin/api/authors")
+@require_admin
+def admin_authors_list():
+    """저자 목록 (검색 + 페이지네이션)."""
+    page = request.args.get("page", 1, type=int)
+    limit = min(request.args.get("limit", 20, type=int), 100)
+    offset = (page - 1) * limit
+    search = request.args.get("search", "").strip()
+
+    where = []
+    params = []
+    if search:
+        where.append("a.name ILIKE %s")
+        params.append(f"%{search}%")
+    where_clause = " AND ".join(where) if where else "1=1"
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute(f"SELECT COUNT(*) FROM authors a WHERE {where_clause}", params)
+    total = cur.fetchone()[0]
+
+    cur.execute(f"""
+        SELECT a.id, a.name, a.nationality, a.birth_year,
+               p.id as profession_id, p.name as profession,
+               f.id as field_id, f.name as field,
+               COUNT(q.id) as quote_count
+        FROM authors a
+        LEFT JOIN professions p ON a.profession_id = p.id
+        LEFT JOIN fields f ON a.field_id = f.id
+        LEFT JOIN quotes q ON q.author_id = a.id
+        WHERE {where_clause}
+        GROUP BY a.id, a.name, a.nationality, a.birth_year, p.id, p.name, f.id, f.name
+        ORDER BY quote_count DESC, a.name
+        LIMIT %s OFFSET %s
+    """, params + [limit, offset])
+    cols = [d[0] for d in cur.description]
+    rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+    cur.close()
+    conn.close()
+    return jsonify({"authors": rows, "total": total, "page": page, "limit": limit})
+
+
+@app.route("/admin/api/authors", methods=["POST"])
+@require_admin
+def admin_authors_create():
+    """저자 추가."""
+    data = request.get_json()
+    name = data.get("name", "").strip()
+    nationality = data.get("nationality", "").strip()
+    birth_year = data.get("birth_year")
+    if not name or not nationality or birth_year is None:
+        return jsonify({"error": "name, nationality, birth_year required"}), 400
+
+    aid = str(uuid.uuid4())
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO authors (id, name, nationality, birth_year, profession_id, field_id)
+        VALUES (%s, %s, %s, %s, %s, %s)
+    """, (aid, name, nationality, birth_year,
+          data.get("profession_id") or None,
+          data.get("field_id") or None))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"id": aid}), 201
+
+
+@app.route("/admin/api/authors/<author_id>", methods=["PATCH"])
+@require_admin
+def admin_authors_update(author_id):
+    """저자 수정."""
+    data = request.get_json()
+    allowed = {"name", "nationality", "birth_year", "profession_id", "field_id"}
+    sets = []
+    params = []
+    for key, val in data.items():
+        if key in allowed:
+            sets.append(f"{key} = %s")
+            params.append(val)
+    if not sets:
+        return jsonify({"error": "no valid fields"}), 400
+
+    params.append(author_id)
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(f"UPDATE authors SET {', '.join(sets)} WHERE id = %s", params)
+    if cur.rowcount == 0:
+        cur.close(); conn.close()
+        return jsonify({"error": "not found"}), 404
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"updated": True})
+
+
+@app.route("/admin/api/authors/<author_id>/preview-delete")
+@require_admin
+def admin_authors_preview_delete(author_id):
+    """저자 삭제 영향 미리보기."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM quotes WHERE author_id = %s", (author_id,))
+    quote_count = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM author_relations WHERE from_author_id = %s OR to_author_id = %s",
+                (author_id, author_id))
+    relation_count = cur.fetchone()[0]
+    cur.execute("""
+        SELECT COUNT(*) FROM user_interactions
+        WHERE quote_id IN (SELECT id FROM quotes WHERE author_id = %s)
+    """, (author_id,))
+    interaction_count = cur.fetchone()[0]
+    cur.close()
+    conn.close()
+    return jsonify({
+        "quote_count": quote_count,
+        "relation_count": relation_count,
+        "interaction_count": interaction_count,
+    })
+
+
+@app.route("/admin/api/authors/<author_id>", methods=["DELETE"])
+@require_admin
+def admin_authors_delete(author_id):
+    """저자 + 소속 명언 + 관계 + interaction 전부 삭제."""
+    conn = get_db()
+    cur = conn.cursor()
+    # 1. interaction 삭제 (해당 저자 명언의)
+    cur.execute("""
+        DELETE FROM user_interactions
+        WHERE quote_id IN (SELECT id FROM quotes WHERE author_id = %s)
+    """, (author_id,))
+    i_count = cur.rowcount
+    # 2. 명언 삭제
+    cur.execute("DELETE FROM quotes WHERE author_id = %s", (author_id,))
+    q_count = cur.rowcount
+    # 3. 관계 삭제
+    cur.execute("DELETE FROM author_relations WHERE from_author_id = %s OR to_author_id = %s",
+                (author_id, author_id))
+    r_count = cur.rowcount
+    # 4. 저자 삭제
+    cur.execute("DELETE FROM authors WHERE id = %s", (author_id,))
+    if cur.rowcount == 0:
+        conn.rollback()
+        cur.close(); conn.close()
+        return jsonify({"error": "not found"}), 404
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({
+        "deleted_quotes": q_count,
+        "deleted_relations": r_count,
+        "deleted_interactions": i_count,
+    })
+
+
+# ---------------------------------------------------------------------------
+# Admin Console API — 마스터 데이터
+# ---------------------------------------------------------------------------
+
+@app.route("/admin/api/masters/keywords")
+@require_admin
+def admin_masters_keywords():
+    return jsonify(query("SELECT id, name, group_name FROM keywords ORDER BY group_name, name"))
+
+
+@app.route("/admin/api/masters/situations")
+@require_admin
+def admin_masters_situations():
+    return jsonify(query("SELECT id, name, group_name FROM situations ORDER BY group_name, name"))
+
+
+@app.route("/admin/api/masters/professions")
+@require_admin
+def admin_masters_professions():
+    return jsonify(query("SELECT id, name, group_name FROM professions ORDER BY group_name, name"))
+
+
+@app.route("/admin/api/masters/fields")
+@require_admin
+def admin_masters_fields():
+    return jsonify(query("SELECT id, name FROM fields ORDER BY name"))
 
 
 # ===========================================================================
