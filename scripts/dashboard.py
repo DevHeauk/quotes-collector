@@ -1188,6 +1188,774 @@ def app_quotes_batch():
 
 
 # ===========================================================================
+# Admin Console HTML
+# ===========================================================================
+
+@app.route("/admin")
+def admin_console():
+    return """<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>명언 관리자 콘솔</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh}
+
+/* --- Layout --- */
+.admin-header{background:#1e293b;padding:16px 24px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #334155}
+.admin-header h1{font-size:20px;color:#f8fafc}
+.admin-header .logout-btn{background:none;border:1px solid #64748b;color:#94a3b8;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px}
+.admin-header .logout-btn:hover{border-color:#f87171;color:#f87171}
+.admin-body{padding:24px;max-width:1400px;margin:0 auto}
+
+/* --- Tabs --- */
+.tabs{display:flex;gap:4px;margin-bottom:24px;border-bottom:2px solid #334155;padding-bottom:0}
+.tab-btn{background:none;border:none;color:#94a3b8;padding:10px 20px;font-size:14px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .2s}
+.tab-btn:hover{color:#e2e8f0}
+.tab-btn.active{color:#38bdf8;border-bottom-color:#38bdf8}
+.tab-panel{display:none}
+.tab-panel.active{display:block}
+
+/* --- Auth --- */
+.auth-container{display:flex;justify-content:center;align-items:center;height:100vh;background:#0f172a}
+.auth-box{background:#1e293b;border-radius:12px;padding:40px;width:360px;text-align:center}
+.auth-box h2{margin-bottom:24px;color:#f8fafc;font-size:20px}
+.auth-box input{width:100%;padding:12px;border-radius:8px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;font-size:14px;margin-bottom:16px}
+.auth-box input:focus{outline:none;border-color:#38bdf8}
+.auth-box button{width:100%;padding:12px;border-radius:8px;border:none;background:#38bdf8;color:#0f172a;font-weight:600;font-size:14px;cursor:pointer}
+.auth-box button:hover{background:#7dd3fc}
+.auth-error{color:#f87171;font-size:13px;margin-top:8px;display:none}
+
+/* --- Buttons --- */
+.btn{padding:6px 14px;border-radius:6px;border:none;font-size:13px;cursor:pointer;font-weight:500;transition:all .15s}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-primary{background:#38bdf8;color:#0f172a}.btn-primary:hover:not(:disabled){background:#7dd3fc}
+.btn-danger{background:#f87171;color:#0f172a}.btn-danger:hover:not(:disabled){background:#fca5a5}
+.btn-success{background:#4ade80;color:#0f172a}.btn-success:hover:not(:disabled){background:#86efac}
+.btn-warning{background:#fbbf24;color:#0f172a}.btn-warning:hover:not(:disabled){background:#fde68a}
+.btn-ghost{background:none;border:1px solid #475569;color:#94a3b8}.btn-ghost:hover:not(:disabled){border-color:#94a3b8;color:#e2e8f0}
+.btn-sm{padding:4px 10px;font-size:12px}
+
+/* --- Filter bar --- */
+.filter-bar{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center}
+.filter-bar select,.filter-bar input{background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:8px 12px;border-radius:6px;font-size:13px}
+.filter-bar select:focus,.filter-bar input:focus{outline:none;border-color:#38bdf8}
+
+/* --- Batch bar --- */
+.batch-bar{display:flex;gap:10px;margin-bottom:16px;align-items:center;padding:10px 16px;background:#1e293b;border-radius:8px}
+.batch-bar .count{font-size:13px;color:#94a3b8;margin-right:8px}
+.batch-bar select{background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:6px 10px;border-radius:6px;font-size:13px}
+
+/* --- Table --- */
+.data-table{width:100%;border-collapse:collapse;font-size:13px}
+.data-table th{text-align:left;padding:10px 12px;color:#64748b;border-bottom:1px solid #334155;font-weight:500;white-space:nowrap}
+.data-table td{padding:10px 12px;border-bottom:1px solid #1e293b;vertical-align:middle}
+.data-table tr:hover{background:#1e293b}
+.data-table input[type=checkbox]{accent-color:#38bdf8;width:16px;height:16px;cursor:pointer}
+.text-truncate{max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:inline-block;vertical-align:middle}
+
+/* --- Badges --- */
+.badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;text-transform:uppercase}
+.badge-draft{background:#334155;color:#94a3b8}
+.badge-reviewed{background:#422006;color:#fbbf24}
+.badge-published{background:#052e16;color:#4ade80}
+.badge-rejected{background:#450a0a;color:#f87171}
+.badge-tag{background:#334155;color:#94a3b8;border-radius:4px;padding:2px 6px;font-size:11px;margin:1px;font-weight:normal;text-transform:none}
+.badge-reliability{font-size:11px;color:#64748b}
+
+/* --- Status buttons --- */
+.status-btns{display:flex;gap:3px}
+.status-btns .btn{padding:3px 8px;font-size:11px}
+
+/* --- Modal --- */
+.modal-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:1000;justify-content:center;align-items:flex-start;padding-top:60px;overflow-y:auto}
+.modal-overlay.active{display:flex}
+.modal{background:#1e293b;border-radius:12px;width:680px;max-width:95vw;padding:24px;max-height:85vh;overflow-y:auto;margin-bottom:40px}
+.modal h3{font-size:18px;color:#f8fafc;margin-bottom:20px}
+.modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px;padding-top:16px;border-top:1px solid #334155}
+
+/* --- Form --- */
+.form-group{margin-bottom:16px}
+.form-group label{display:block;font-size:13px;color:#94a3b8;margin-bottom:6px;font-weight:500}
+.form-group input,.form-group select,.form-group textarea{width:100%;padding:10px 12px;border-radius:6px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;font-size:14px;font-family:inherit}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus{outline:none;border-color:#38bdf8}
+.form-group textarea{min-height:80px;resize:vertical}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.checkbox-group{display:flex;flex-wrap:wrap;gap:6px;max-height:200px;overflow-y:auto;padding:8px;border:1px solid #334155;border-radius:6px;background:#0f172a}
+.checkbox-group label{display:flex;align-items:center;gap:4px;font-size:12px;color:#94a3b8;cursor:pointer;padding:3px 6px;border-radius:4px}
+.checkbox-group label:hover{background:#334155}
+.checkbox-group-title{font-size:12px;font-weight:600;color:#64748b;margin-top:6px;margin-bottom:2px;width:100%;border-bottom:1px solid #334155;padding-bottom:3px}
+.checkbox-group input[type=checkbox]{accent-color:#38bdf8}
+
+/* --- Pagination --- */
+.pagination{display:flex;justify-content:center;align-items:center;gap:12px;margin-top:20px;font-size:13px;color:#94a3b8}
+.pagination .btn{min-width:80px}
+.page-info{color:#64748b}
+
+/* --- Author search dropdown --- */
+.author-search-wrap{position:relative}
+.author-dropdown{position:absolute;top:100%;left:0;right:0;background:#1e293b;border:1px solid #334155;border-radius:0 0 6px 6px;max-height:200px;overflow-y:auto;z-index:10;display:none}
+.author-dropdown.open{display:block}
+.author-dropdown-item{padding:8px 12px;font-size:13px;cursor:pointer;color:#e2e8f0}
+.author-dropdown-item:hover{background:#334155}
+.author-dropdown-item .sub{font-size:11px;color:#64748b}
+
+/* --- Delete preview --- */
+.delete-preview{background:#1c1917;border:1px solid #7f1d1d;border-radius:8px;padding:16px;margin:16px 0}
+.delete-preview p{font-size:13px;margin-bottom:6px;color:#fca5a5}
+.delete-preview .warn{font-size:14px;font-weight:600;color:#f87171;margin-bottom:12px}
+
+/* --- Loading --- */
+.loading{text-align:center;padding:40px;color:#64748b;font-size:14px}
+.toast{position:fixed;bottom:24px;right:24px;background:#1e293b;border:1px solid #334155;border-radius:8px;padding:12px 20px;font-size:13px;z-index:2000;animation:slideUp .3s}
+.toast-success{border-color:#4ade80;color:#4ade80}
+.toast-error{border-color:#f87171;color:#f87171}
+@keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
+</style>
+</head>
+<body>
+
+<!-- ========== AUTH SCREEN ========== -->
+<div id="auth-screen" class="auth-container" style="display:none">
+  <div class="auth-box">
+    <h2>Admin Console</h2>
+    <input type="password" id="token-input" placeholder="관리자 토큰 입력">
+    <button onclick="doLogin()">로그인</button>
+    <div id="auth-error" class="auth-error">인증에 실패했습니다.</div>
+  </div>
+</div>
+
+<!-- ========== MAIN SCREEN ========== -->
+<div id="main-screen" style="display:none">
+  <div class="admin-header">
+    <h1>명언 관리자 콘솔</h1>
+    <button class="logout-btn" onclick="doLogout()">로그아웃</button>
+  </div>
+  <div class="admin-body">
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="quotes">명언 관리</button>
+      <button class="tab-btn" data-tab="authors">저자 관리</button>
+    </div>
+
+    <!-- ===================== QUOTES TAB ===================== -->
+    <div id="tab-quotes" class="tab-panel active">
+      <div class="filter-bar">
+        <select id="f-status"><option value="">전체 상태</option><option value="draft">Draft</option><option value="reviewed">Reviewed</option><option value="published">Published</option><option value="rejected">Rejected</option></select>
+        <select id="f-keyword-group"><option value="">전체 키워드 그룹</option></select>
+        <select id="f-reliability"><option value="">전체 신뢰도</option><option value="verified">Verified</option><option value="attributed">Attributed</option><option value="disputed">Disputed</option><option value="unknown">Unknown</option></select>
+        <input type="text" id="f-search" placeholder="텍스트/저자 검색..." style="flex:1;min-width:180px">
+        <button class="btn btn-ghost" onclick="loadQuotes(1)">검색</button>
+        <button class="btn btn-primary" onclick="openQuoteModal()">+ 명언 추가</button>
+      </div>
+
+      <!-- Batch bar -->
+      <div id="batch-bar" class="batch-bar" style="display:none">
+        <span class="count"><strong id="sel-count">0</strong>개 선택</span>
+        <select id="batch-status-sel"><option value="">상태 변경...</option><option value="draft">Draft</option><option value="reviewed">Reviewed</option><option value="published">Published</option><option value="rejected">Rejected</option></select>
+        <button class="btn btn-warning btn-sm" onclick="batchStatus()">적용</button>
+        <button class="btn btn-danger btn-sm" onclick="batchDelete()">일괄 삭제</button>
+      </div>
+
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th><input type="checkbox" id="chk-all" onchange="toggleAll(this)"></th>
+            <th>텍스트</th>
+            <th>저자</th>
+            <th>상태</th>
+            <th>신뢰도</th>
+            <th>키워드</th>
+            <th>생성일</th>
+            <th>액션</th>
+          </tr>
+        </thead>
+        <tbody id="quotes-body"><tr><td colspan="8" class="loading">로딩 중...</td></tr></tbody>
+      </table>
+      <div class="pagination">
+        <button class="btn btn-ghost btn-sm" id="q-prev" onclick="loadQuotes(qPage-1)">이전</button>
+        <span id="q-page-info" class="page-info"></span>
+        <button class="btn btn-ghost btn-sm" id="q-next" onclick="loadQuotes(qPage+1)">다음</button>
+      </div>
+    </div>
+
+    <!-- ===================== AUTHORS TAB ===================== -->
+    <div id="tab-authors" class="tab-panel">
+      <div class="filter-bar">
+        <input type="text" id="a-search" placeholder="저자 이름 검색..." style="flex:1;min-width:200px">
+        <button class="btn btn-ghost" onclick="loadAuthors(1)">검색</button>
+        <button class="btn btn-primary" onclick="openAuthorModal()">+ 저자 추가</button>
+      </div>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>이름</th>
+            <th>국적</th>
+            <th>출생연도</th>
+            <th>직업</th>
+            <th>분야</th>
+            <th>명언 수</th>
+            <th>액션</th>
+          </tr>
+        </thead>
+        <tbody id="authors-body"><tr><td colspan="7" class="loading">로딩 중...</td></tr></tbody>
+      </table>
+      <div class="pagination">
+        <button class="btn btn-ghost btn-sm" id="a-prev" onclick="loadAuthors(aPage-1)">이전</button>
+        <span id="a-page-info" class="page-info"></span>
+        <button class="btn btn-ghost btn-sm" id="a-next" onclick="loadAuthors(aPage+1)">다음</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== QUOTE MODAL ========== -->
+<div id="quote-modal" class="modal-overlay">
+  <div class="modal">
+    <h3 id="qm-title">명언 추가</h3>
+    <input type="hidden" id="qm-id">
+    <div class="form-group"><label>텍스트 *</label><textarea id="qm-text" rows="3"></textarea></div>
+    <div class="form-row">
+      <div class="form-group"><label>원문</label><textarea id="qm-original" rows="2"></textarea></div>
+      <div class="form-group"><label>원어</label>
+        <select id="qm-lang"><option value="">-</option><option value="ko">한국어 (ko)</option><option value="en">영어 (en)</option><option value="zh">중국어 (zh)</option><option value="de">독일어 (de)</option><option value="fr">프랑스어 (fr)</option><option value="ja">일본어 (ja)</option><option value="la">라틴어 (la)</option><option value="el">그리스어 (el)</option><option value="ar">아랍어 (ar)</option><option value="sa">산스크리트어 (sa)</option></select>
+      </div>
+    </div>
+    <div class="form-group"><label>저자 *</label>
+      <div class="author-search-wrap">
+        <input type="text" id="qm-author-search" placeholder="저자 이름으로 검색..." autocomplete="off">
+        <input type="hidden" id="qm-author-id">
+        <div id="qm-author-dropdown" class="author-dropdown"></div>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>출처</label><input type="text" id="qm-source"></div>
+      <div class="form-group"><label>연도</label><input type="number" id="qm-year"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>상태</label>
+        <select id="qm-status"><option value="draft">Draft</option><option value="reviewed">Reviewed</option><option value="published">Published</option><option value="rejected">Rejected</option></select>
+      </div>
+      <div class="form-group"><label>출처 신뢰도</label>
+        <select id="qm-reliability"><option value="unknown">Unknown</option><option value="verified">Verified</option><option value="attributed">Attributed</option><option value="disputed">Disputed</option></select>
+      </div>
+    </div>
+    <div class="form-group"><label>키워드</label><div id="qm-keywords" class="checkbox-group"></div></div>
+    <div class="form-group"><label>상황</label><div id="qm-situations" class="checkbox-group"></div></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('quote-modal')">취소</button>
+      <button class="btn btn-primary" id="qm-save" onclick="saveQuote()">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== AUTHOR MODAL ========== -->
+<div id="author-modal" class="modal-overlay">
+  <div class="modal" style="width:480px">
+    <h3 id="am-title">저자 추가</h3>
+    <input type="hidden" id="am-id">
+    <div class="form-group"><label>이름 *</label><input type="text" id="am-name"></div>
+    <div class="form-row">
+      <div class="form-group"><label>국적 (ISO 2자리) *</label><input type="text" id="am-nationality" maxlength="2" placeholder="KR, US, GB..."></div>
+      <div class="form-group"><label>출생연도 *</label><input type="number" id="am-birth-year"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>직업</label><select id="am-profession"><option value="">-</option></select></div>
+      <div class="form-group"><label>분야</label><select id="am-field"><option value="">-</option></select></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('author-modal')">취소</button>
+      <button class="btn btn-primary" id="am-save" onclick="saveAuthor()">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== DELETE CONFIRM MODAL ========== -->
+<div id="delete-modal" class="modal-overlay">
+  <div class="modal" style="width:420px">
+    <h3>삭제 확인</h3>
+    <div id="del-content"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('delete-modal')">취소</button>
+      <button class="btn btn-danger" id="del-confirm">삭제</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===== Config =====
+const TOKEN_KEY = 'admin_token';
+let token = localStorage.getItem(TOKEN_KEY) || '';
+
+// ===== State =====
+let qPage = 1, qTotal = 0, qLimit = 20;
+let aPage = 1, aTotal = 0, aLimit = 20;
+let mastersLoaded = false;
+let masterKeywords = [], masterSituations = [], masterProfessions = [], masterFields = [];
+let authorCache = [];
+let selectedIds = new Set();
+
+// ===== Auth =====
+function checkAuth() {
+  if (!token) { showAuth(); return; }
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('main-screen').style.display = 'block';
+  init();
+}
+function showAuth() {
+  document.getElementById('auth-screen').style.display = 'flex';
+  document.getElementById('main-screen').style.display = 'none';
+}
+function doLogin() {
+  const t = document.getElementById('token-input').value.trim();
+  if (!t) return;
+  token = t;
+  localStorage.setItem(TOKEN_KEY, t);
+  document.getElementById('auth-error').style.display = 'none';
+  checkAuth();
+}
+function doLogout() {
+  token = '';
+  localStorage.removeItem(TOKEN_KEY);
+  showAuth();
+}
+
+// ===== API Helper =====
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    ...opts,
+    headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json', ...(opts.headers || {}) },
+    body: opts.body ? JSON.stringify(opts.body) : undefined
+  });
+  if (res.status === 401) { doLogout(); throw new Error('unauthorized'); }
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'API error');
+  return data;
+}
+
+// ===== Toast =====
+function toast(msg, type = 'success') {
+  const el = document.createElement('div');
+  el.className = 'toast toast-' + type;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 3000);
+}
+
+// ===== Init =====
+async function init() {
+  loadMasters();
+  loadQuotes(1);
+  // Enter key on search
+  document.getElementById('f-search').addEventListener('keydown', e => { if (e.key === 'Enter') loadQuotes(1); });
+  document.getElementById('a-search').addEventListener('keydown', e => { if (e.key === 'Enter') loadAuthors(1); });
+}
+
+// ===== Tabs =====
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    if (btn.dataset.tab === 'authors' && aTotal === 0) loadAuthors(1);
+  });
+});
+
+// ===== Masters =====
+async function loadMasters() {
+  if (mastersLoaded) return;
+  try {
+    const [kw, sit, prof, fld] = await Promise.all([
+      api('/admin/api/masters/keywords'),
+      api('/admin/api/masters/situations'),
+      api('/admin/api/masters/professions'),
+      api('/admin/api/masters/fields'),
+    ]);
+    masterKeywords = kw; masterSituations = sit; masterProfessions = prof; masterFields = fld;
+    mastersLoaded = true;
+    // Populate keyword group filter
+    const groups = [...new Set(kw.map(k => k.group_name).filter(Boolean))].sort();
+    const sel = document.getElementById('f-keyword-group');
+    groups.forEach(g => { const o = document.createElement('option'); o.value = g; o.textContent = g; sel.appendChild(o); });
+    // Populate profession/field selects
+    populateSelect('am-profession', prof, 'name');
+    populateSelect('am-field', fld, 'name');
+  } catch (e) { console.error('Masters load failed', e); }
+}
+function populateSelect(id, items, labelKey) {
+  const sel = document.getElementById(id);
+  // keep first option
+  items.forEach(item => { const o = document.createElement('option'); o.value = item.id; o.textContent = item.group_name ? item.name + ' (' + item.group_name + ')' : item.name; sel.appendChild(o); });
+}
+
+// ===== Quotes List =====
+async function loadQuotes(page) {
+  if (page < 1) return;
+  qPage = page;
+  selectedIds.clear();
+  updateBatchBar();
+  document.getElementById('chk-all').checked = false;
+  const params = new URLSearchParams({ page, limit: qLimit });
+  const status = document.getElementById('f-status').value;
+  const kwGroup = document.getElementById('f-keyword-group').value;
+  const rel = document.getElementById('f-reliability').value;
+  const search = document.getElementById('f-search').value.trim();
+  if (status) params.set('status', status);
+  if (kwGroup) params.set('keyword_group', kwGroup);
+  if (rel) params.set('reliability', rel);
+  if (search) params.set('search', search);
+
+  try {
+    const data = await api('/admin/api/quotes?' + params);
+    qTotal = data.total;
+    renderQuotes(data.quotes);
+    const totalPages = Math.ceil(qTotal / qLimit) || 1;
+    document.getElementById('q-page-info').textContent = qPage + ' / ' + totalPages + ' (' + qTotal + '건)';
+    document.getElementById('q-prev').disabled = qPage <= 1;
+    document.getElementById('q-next').disabled = qPage >= totalPages;
+  } catch (e) { console.error(e); }
+}
+
+function renderQuotes(quotes) {
+  const tbody = document.getElementById('quotes-body');
+  if (!quotes.length) { tbody.innerHTML = '<tr><td colspan="8" class="loading">데이터가 없습니다.</td></tr>'; return; }
+  tbody.innerHTML = quotes.map(q => {
+    const text = q.text.length > 50 ? q.text.slice(0, 50) + '...' : q.text;
+    const kws = (q.keywords || []).slice(0, 4).map(k => '<span class="badge-tag">' + esc(k) + '</span>').join('');
+    const extra = (q.keywords || []).length > 4 ? '<span class="badge-tag">+' + ((q.keywords.length) - 4) + '</span>' : '';
+    const date = q.created_at ? q.created_at.slice(0, 10) : '';
+    const statuses = ['draft','reviewed','published','rejected'];
+    const statusBtns = statuses.map(s => {
+      const cls = s === 'draft' ? 'btn-ghost' : s === 'reviewed' ? 'btn-warning' : s === 'published' ? 'btn-success' : 'btn-danger';
+      const label = s.charAt(0).toUpperCase();
+      return '<button class="btn btn-sm ' + cls + '" ' + (q.status === s ? 'disabled' : '') + ' onclick="quickStatus(\\'' + q.id + '\\',\\'' + s + '\\')" title="' + s + '">' + label + '</button>';
+    }).join('');
+    return '<tr>' +
+      '<td><input type="checkbox" class="q-chk" value="' + q.id + '" onchange="onCheckChange()"></td>' +
+      '<td><span class="text-truncate" title="' + esc(q.text) + '">' + esc(text) + '</span></td>' +
+      '<td>' + esc(q.author_name || '') + '</td>' +
+      '<td><span class="badge badge-' + q.status + '">' + q.status + '</span></td>' +
+      '<td><span class="badge-reliability">' + (q.source_reliability || '-') + '</span></td>' +
+      '<td>' + kws + extra + '</td>' +
+      '<td style="white-space:nowrap;color:#64748b">' + date + '</td>' +
+      '<td style="white-space:nowrap"><div class="status-btns">' + statusBtns + '</div><button class="btn btn-ghost btn-sm" style="margin-left:4px" onclick="editQuote(\\'' + q.id + '\\')" title="편집">&#9998;</button><button class="btn btn-danger btn-sm" style="margin-left:2px" onclick="deleteQuote(\\'' + q.id + '\\')" title="삭제">&#10005;</button></td>' +
+      '</tr>';
+  }).join('');
+}
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+// ===== Checkbox / Batch =====
+function toggleAll(el) {
+  document.querySelectorAll('.q-chk').forEach(c => { c.checked = el.checked; });
+  onCheckChange();
+}
+function onCheckChange() {
+  selectedIds.clear();
+  document.querySelectorAll('.q-chk:checked').forEach(c => selectedIds.add(c.value));
+  updateBatchBar();
+}
+function updateBatchBar() {
+  const bar = document.getElementById('batch-bar');
+  const n = selectedIds.size;
+  bar.style.display = n > 0 ? 'flex' : 'none';
+  document.getElementById('sel-count').textContent = n;
+}
+async function batchStatus() {
+  const status = document.getElementById('batch-status-sel').value;
+  if (!status) { toast('상태를 선택하세요', 'error'); return; }
+  if (!confirm(selectedIds.size + '개 명언을 ' + status + '로 변경하시겠습니까?')) return;
+  try {
+    const data = await api('/admin/api/quotes/batch-status', { method: 'POST', body: { ids: [...selectedIds], status } });
+    toast(data.updated + '개 변경 완료');
+    loadQuotes(qPage);
+  } catch (e) { toast(e.message, 'error'); }
+}
+async function batchDelete() {
+  if (!confirm(selectedIds.size + '개 명언을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) return;
+  try {
+    const data = await api('/admin/api/quotes/batch-delete', { method: 'POST', body: { ids: [...selectedIds] } });
+    toast(data.deleted + '개 삭제 완료');
+    loadQuotes(qPage);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ===== Quick Status =====
+async function quickStatus(id, status) {
+  try {
+    await api('/admin/api/quotes/' + id, { method: 'PATCH', body: { status } });
+    toast('상태 변경: ' + status);
+    loadQuotes(qPage);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ===== Quote Modal =====
+let editingQuote = null;
+function openQuoteModal(quote) {
+  editingQuote = quote || null;
+  document.getElementById('qm-title').textContent = quote ? '명언 편집' : '명언 추가';
+  document.getElementById('qm-id').value = quote ? quote.id : '';
+  document.getElementById('qm-text').value = quote ? quote.text : '';
+  document.getElementById('qm-original').value = quote ? (quote.text_original || '') : '';
+  document.getElementById('qm-lang').value = quote ? (quote.original_language || '') : '';
+  document.getElementById('qm-author-search').value = quote ? (quote.author_name || '') : '';
+  document.getElementById('qm-author-id').value = quote ? (quote.author_id || '') : '';
+  document.getElementById('qm-source').value = quote ? (quote.source || '') : '';
+  document.getElementById('qm-year').value = quote ? (quote.year || '') : '';
+  document.getElementById('qm-status').value = quote ? quote.status : 'draft';
+  document.getElementById('qm-reliability').value = quote ? (quote.source_reliability || 'unknown') : 'unknown';
+
+  // Render keyword checkboxes grouped
+  renderCheckboxGroup('qm-keywords', masterKeywords, quote ? (quote.keyword_ids || []) : []);
+  renderCheckboxGroup('qm-situations', masterSituations, quote ? (quote.situation_ids || []) : []);
+
+  document.getElementById('quote-modal').classList.add('active');
+}
+function renderCheckboxGroup(containerId, items, selectedIds) {
+  const el = document.getElementById(containerId);
+  const grouped = {};
+  items.forEach(item => {
+    const g = item.group_name || '미분류';
+    if (!grouped[g]) grouped[g] = [];
+    grouped[g].push(item);
+  });
+  let html = '';
+  Object.keys(grouped).sort().forEach(g => {
+    html += '<div class="checkbox-group-title">' + esc(g) + '</div>';
+    grouped[g].forEach(item => {
+      const checked = selectedIds.includes(item.id) ? 'checked' : '';
+      html += '<label><input type="checkbox" value="' + item.id + '" ' + checked + '>' + esc(item.name) + '</label>';
+    });
+  });
+  el.innerHTML = html;
+}
+
+// Author search dropdown
+let authorSearchTimer;
+document.addEventListener('DOMContentLoaded', () => {
+  const input = document.getElementById('qm-author-search');
+  const dropdown = document.getElementById('qm-author-dropdown');
+  if (!input) return;
+  input.addEventListener('input', () => {
+    clearTimeout(authorSearchTimer);
+    authorSearchTimer = setTimeout(async () => {
+      const q = input.value.trim();
+      if (q.length < 1) { dropdown.classList.remove('open'); return; }
+      try {
+        const data = await api('/admin/api/authors?search=' + encodeURIComponent(q) + '&limit=10');
+        authorCache = data.authors;
+        if (!data.authors.length) { dropdown.classList.remove('open'); return; }
+        dropdown.innerHTML = data.authors.map(a =>
+          '<div class="author-dropdown-item" data-id="' + a.id + '" data-name="' + esc(a.name) + '">' +
+          esc(a.name) + ' <span class="sub">' + (a.nationality || '') + (a.birth_year ? ' ' + a.birth_year : '') + '</span></div>'
+        ).join('');
+        dropdown.classList.add('open');
+      } catch(e) {}
+    }, 300);
+  });
+  dropdown.addEventListener('click', e => {
+    const item = e.target.closest('.author-dropdown-item');
+    if (!item) return;
+    input.value = item.dataset.name;
+    document.getElementById('qm-author-id').value = item.dataset.id;
+    dropdown.classList.remove('open');
+  });
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.author-search-wrap')) dropdown.classList.remove('open');
+  });
+});
+
+async function saveQuote() {
+  const text = document.getElementById('qm-text').value.trim();
+  const authorId = document.getElementById('qm-author-id').value;
+  if (!text) { toast('텍스트를 입력하세요', 'error'); return; }
+  if (!authorId) { toast('저자를 선택하세요', 'error'); return; }
+
+  const kwIds = [...document.querySelectorAll('#qm-keywords input:checked')].map(c => parseInt(c.value));
+  const sitIds = [...document.querySelectorAll('#qm-situations input:checked')].map(c => parseInt(c.value));
+
+  const body = {
+    text,
+    text_original: document.getElementById('qm-original').value.trim() || null,
+    original_language: document.getElementById('qm-lang').value || null,
+    author_id: authorId,
+    source: document.getElementById('qm-source').value.trim() || null,
+    year: document.getElementById('qm-year').value ? parseInt(document.getElementById('qm-year').value) : null,
+    status: document.getElementById('qm-status').value,
+    source_reliability: document.getElementById('qm-reliability').value,
+    keyword_ids: kwIds,
+    situation_ids: sitIds,
+  };
+
+  const id = document.getElementById('qm-id').value;
+  try {
+    if (id) {
+      await api('/admin/api/quotes/' + id, { method: 'PATCH', body });
+      toast('명언 수정 완료');
+    } else {
+      await api('/admin/api/quotes', { method: 'POST', body });
+      toast('명언 추가 완료');
+    }
+    closeModal('quote-modal');
+    loadQuotes(qPage);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function editQuote(id) {
+  try {
+    // Fetch fresh data by loading current page data
+    const params = new URLSearchParams({ page: 1, limit: 1, search: id });
+    // We need full data; let's just find in current data or refetch
+    const data = await api('/admin/api/quotes?page=1&limit=100&search=');
+    const q = data.quotes.find(q => q.id === id);
+    if (q) { openQuoteModal(q); return; }
+    // Fallback: search by full list on current page
+    toast('명언을 찾을 수 없습니다', 'error');
+  } catch(e) {
+    // Simpler approach: reconstruct from table
+    toast('편집 데이터를 불러올 수 없습니다', 'error');
+  }
+}
+
+function deleteQuote(id) {
+  document.getElementById('del-content').innerHTML = '<p>이 명언을 삭제하시겠습니까?</p><p style="color:#64748b;font-size:12px">관련 사용자 인터랙션도 함께 삭제됩니다.</p>';
+  document.getElementById('del-confirm').onclick = async () => {
+    try {
+      await api('/admin/api/quotes/' + id, { method: 'DELETE' });
+      toast('명언 삭제 완료');
+      closeModal('delete-modal');
+      loadQuotes(qPage);
+    } catch (e) { toast(e.message, 'error'); }
+  };
+  document.getElementById('delete-modal').classList.add('active');
+}
+
+// ===== Authors List =====
+async function loadAuthors(page) {
+  if (page < 1) return;
+  aPage = page;
+  const search = document.getElementById('a-search').value.trim();
+  const params = new URLSearchParams({ page, limit: aLimit });
+  if (search) params.set('search', search);
+  try {
+    const data = await api('/admin/api/authors?' + params);
+    aTotal = data.total;
+    renderAuthors(data.authors);
+    const totalPages = Math.ceil(aTotal / aLimit) || 1;
+    document.getElementById('a-page-info').textContent = aPage + ' / ' + totalPages + ' (' + aTotal + '건)';
+    document.getElementById('a-prev').disabled = aPage <= 1;
+    document.getElementById('a-next').disabled = aPage >= totalPages;
+  } catch(e) { console.error(e); }
+}
+
+function renderAuthors(authors) {
+  const tbody = document.getElementById('authors-body');
+  if (!authors.length) { tbody.innerHTML = '<tr><td colspan="7" class="loading">데이터가 없습니다.</td></tr>'; return; }
+  tbody.innerHTML = authors.map(a =>
+    '<tr>' +
+    '<td>' + esc(a.name) + '</td>' +
+    '<td>' + esc(a.nationality || '-') + '</td>' +
+    '<td>' + (a.birth_year || '-') + '</td>' +
+    '<td>' + esc(a.profession || '-') + '</td>' +
+    '<td>' + esc(a.field || '-') + '</td>' +
+    '<td>' + (a.quote_count || 0) + '</td>' +
+    '<td style="white-space:nowrap">' +
+      '<button class="btn btn-ghost btn-sm" onclick="editAuthor(\\'' + a.id + '\\')" title="편집">&#9998;</button>' +
+      '<button class="btn btn-danger btn-sm" style="margin-left:4px" onclick="deleteAuthor(\\'' + a.id + '\\',\\'' + esc(a.name).replace(/'/g,"\\\\'") + '\\')" title="삭제">&#10005;</button>' +
+    '</td></tr>'
+  ).join('');
+}
+
+// ===== Author Modal =====
+function openAuthorModal(author) {
+  document.getElementById('am-title').textContent = author ? '저자 편집' : '저자 추가';
+  document.getElementById('am-id').value = author ? author.id : '';
+  document.getElementById('am-name').value = author ? author.name : '';
+  document.getElementById('am-nationality').value = author ? (author.nationality || '') : '';
+  document.getElementById('am-birth-year').value = author ? (author.birth_year || '') : '';
+  document.getElementById('am-profession').value = author ? (author.profession_id || '') : '';
+  document.getElementById('am-field').value = author ? (author.field_id || '') : '';
+  document.getElementById('author-modal').classList.add('active');
+}
+
+async function editAuthor(id) {
+  try {
+    const data = await api('/admin/api/authors?limit=100');
+    const a = data.authors.find(a => a.id === id);
+    if (a) { openAuthorModal(a); return; }
+    toast('저자를 찾을 수 없습니다', 'error');
+  } catch(e) { toast('편집 데이터를 불러올 수 없습니다', 'error'); }
+}
+
+async function saveAuthor() {
+  const name = document.getElementById('am-name').value.trim();
+  const nationality = document.getElementById('am-nationality').value.trim().toUpperCase();
+  const birthYear = document.getElementById('am-birth-year').value;
+  if (!name || !nationality || !birthYear) { toast('이름, 국적, 출생연도는 필수입니다', 'error'); return; }
+  if (nationality.length !== 2) { toast('국적은 ISO 2자리 코드여야 합니다 (예: KR, US)', 'error'); return; }
+
+  const body = {
+    name,
+    nationality,
+    birth_year: parseInt(birthYear),
+    profession_id: document.getElementById('am-profession').value ? parseInt(document.getElementById('am-profession').value) : null,
+    field_id: document.getElementById('am-field').value ? parseInt(document.getElementById('am-field').value) : null,
+  };
+
+  const id = document.getElementById('am-id').value;
+  try {
+    if (id) {
+      await api('/admin/api/authors/' + id, { method: 'PATCH', body });
+      toast('저자 수정 완료');
+    } else {
+      await api('/admin/api/authors', { method: 'POST', body });
+      toast('저자 추가 완료');
+    }
+    closeModal('author-modal');
+    loadAuthors(aPage);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function deleteAuthor(id, name) {
+  try {
+    const preview = await api('/admin/api/authors/' + id + '/preview-delete');
+    document.getElementById('del-content').innerHTML =
+      '<div class="delete-preview">' +
+      '<div class="warn">"' + esc(name) + '" 저자를 삭제합니다</div>' +
+      '<p>연결된 명언: <strong>' + preview.quote_count + '</strong>개</p>' +
+      '<p>저자 관계: <strong>' + preview.relation_count + '</strong>개</p>' +
+      '<p>사용자 인터랙션: <strong>' + preview.interaction_count + '</strong>개</p>' +
+      '</div>' +
+      '<p style="font-size:13px;color:#f87171;margin-top:8px">위 데이터가 모두 함께 삭제됩니다. 되돌릴 수 없습니다.</p>';
+  } catch(e) {
+    document.getElementById('del-content').innerHTML = '<p>"' + esc(name) + '" 저자를 삭제하시겠습니까?</p>';
+  }
+  document.getElementById('del-confirm').onclick = async () => {
+    try {
+      const data = await api('/admin/api/authors/' + id, { method: 'DELETE' });
+      toast('저자 삭제 완료 (명언 ' + data.deleted_quotes + '개 함께 삭제)');
+      closeModal('delete-modal');
+      loadAuthors(aPage);
+    } catch (e) { toast(e.message, 'error'); }
+  };
+  document.getElementById('delete-modal').classList.add('active');
+}
+
+// ===== Modal Helpers =====
+function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+  overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(overlay.id); });
+});
+
+// ===== Boot =====
+checkAuth();
+</script>
+</body>
+</html>"""
+
+
+# ===========================================================================
 # Dashboard HTML
 # ===========================================================================
 
