@@ -13,7 +13,7 @@ import type {OnboardingStackParamList} from '../../types/navigation';
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'QuoteTaste'>;
 
 export function QuoteTasteScreen({navigation, route}: Props) {
-  const {situations, keywords} = route.params;
+  const {needs} = route.params;
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -24,8 +24,7 @@ export function QuoteTasteScreen({navigation, route}: Props) {
     setLoading(true);
     setError(false);
     fetchRecommend({
-      situations: situations.join(','),
-      keywords: keywords.join(','),
+      needs: needs.join(','),
       limit: '3',
     })
       .then(setQuotes)
@@ -35,7 +34,7 @@ export function QuoteTasteScreen({navigation, route}: Props) {
 
   useEffect(() => {
     loadQuotes();
-  }, [situations, keywords]);
+  }, [needs]);
 
   const toggleLike = (id: string) => {
     setLiked(prev => {
@@ -52,7 +51,7 @@ export function QuoteTasteScreen({navigation, route}: Props) {
   const handleComplete = async () => {
     setSaving(true);
     try {
-      await savePreference(situations, keywords);
+      await savePreference(needs);
       for (const id of liked) {
         await addFavorite(id);
       }
@@ -87,7 +86,7 @@ export function QuoteTasteScreen({navigation, route}: Props) {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.step}>3 / 3</Text>
+        <Text style={styles.step}>2 / 2</Text>
         <Text style={styles.title}>마음에 드는 명언을{'\n'}골라보세요</Text>
         <Text style={styles.subtitle}>취향을 파악하는 데 도움이 돼요</Text>
       </View>
