@@ -253,6 +253,35 @@ def admin_migrate():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_interactions_device ON user_interactions(device_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_interactions_created ON user_interactions(created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_interactions_device_type ON user_interactions(device_id, interaction_type)")
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS user_preferences (
+            id VARCHAR(36) PRIMARY KEY,
+            device_id VARCHAR(64) NOT NULL UNIQUE,
+            needs TEXT[] NOT NULL DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_preferences_device ON user_preferences(device_id)")
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS raw_quotes (
+            id VARCHAR(36) PRIMARY KEY,
+            source VARCHAR(20) NOT NULL,
+            text TEXT NOT NULL,
+            author VARCHAR(200),
+            source_url TEXT,
+            tags TEXT[],
+            upvotes INT,
+            status VARCHAR(20) DEFAULT 'pending',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_raw_quotes_source ON raw_quotes(source)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_raw_quotes_status ON raw_quotes(status)")
+    cur.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_raw_quotes_dedup
+        ON raw_quotes (source, md5(text))
+    """)
     conn.commit()
     cur.close()
     conn.close()
@@ -654,6 +683,67 @@ def admin_masters_fields():
     return jsonify(query("SELECT id, name FROM fields ORDER BY name"))
 
 
+@app.route("/admin/api/raw-quotes", methods=["POST"])
+@require_admin
+def admin_raw_quotes_bulk():
+    """raw_quotes 테이블에 벌크 INSERT."""
+    data = request.get_json()
+    items = data.get("quotes", [])
+    if not items:
+        return jsonify({"error": "quotes array required"}), 400
+    conn = get_db()
+    cur = conn.cursor()
+    saved = 0
+    dupes = 0
+    for q in items:
+        text = (q.get("text") or "").strip()
+        if not text:
+            continue
+        try:
+            cur.execute("""
+                INSERT INTO raw_quotes (id, source, text, author, source_url, tags, upvotes, status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, 'pending')
+                ON CONFLICT (source, md5(text)) DO NOTHING
+            """, (str(uuid.uuid4()), q.get("source", "unknown"), text,
+                  q.get("author"), q.get("source_url"),
+                  q.get("tags"), q.get("upvotes")))
+            if cur.rowcount > 0:
+                saved += 1
+            else:
+                dupes += 1
+        except psycopg2.Error:
+            conn.rollback()
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"saved": saved, "dupes": dupes, "total": len(items)})
+
+
+@app.route("/admin/api/raw-quotes")
+@require_admin
+def admin_raw_quotes_list():
+    """raw_quotes 목록 조회."""
+    source = request.args.get("source")
+    status = request.args.get("status", "pending")
+    conn = get_db()
+    cur = conn.cursor()
+    sql = "SELECT id, source, text, author, source_url, tags, upvotes, status, created_at FROM raw_quotes WHERE status = %s"
+    params = [status]
+    if source:
+        sql += " AND source = %s"
+        params.append(source)
+    sql += " ORDER BY created_at DESC LIMIT 200"
+    cur.execute(sql, params)
+    cols = [d[0] for d in cur.description]
+    rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+    cur.close()
+    conn.close()
+    for r in rows:
+        if r.get("created_at"):
+            r["created_at"] = r["created_at"].isoformat()
+    return jsonify({"quotes": rows, "total": len(rows)})
+
+
 # ===========================================================================
 # App API (모바일 앱 전용)
 # ===========================================================================
@@ -803,6 +893,46 @@ def app_interactions():
     cur.close()
     conn.close()
     return jsonify({"saved": saved})
+
+
+@app.route("/app/api/v1/preferences", methods=["POST"])
+def app_save_preferences():
+    """사용자 온보딩 선호도 저장 (upsert)."""
+    data = request.get_json()
+    device_id = data.get("device_id", "")
+    needs = data.get("needs", [])
+    if not device_id or not isinstance(needs, list):
+        return jsonify({"error": "device_id and needs required"}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO user_preferences (id, device_id, needs, created_at, updated_at)
+        VALUES (%s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT (device_id) DO UPDATE SET needs = %s, updated_at = CURRENT_TIMESTAMP
+    """, (str(uuid.uuid4()), device_id, needs, needs))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"status": "saved"})
+
+
+@app.route("/app/api/v1/preferences")
+def app_get_preferences():
+    """사용자 온보딩 선호도 조회."""
+    device_id = request.args.get("device_id", "")
+    if not device_id:
+        return jsonify({"error": "device_id required"}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT needs, created_at, updated_at FROM user_preferences WHERE device_id = %s", (device_id,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    if not row:
+        return jsonify({"needs": None})
+    return jsonify({"needs": row[0], "created_at": row[1].isoformat(), "updated_at": row[2].isoformat()})
 
 
 @app.route("/app/api/v1/profile")
