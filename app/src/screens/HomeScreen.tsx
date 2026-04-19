@@ -12,6 +12,7 @@ import {getPreference} from '../storage/preferences';
 import {logInteraction} from '../storage/interactions';
 import {useInteractionSync} from '../hooks/useInteractionSync';
 import {useProfile} from '../hooks/useProfile';
+import {Toast} from '../components/Toast';
 import type {Quote} from '../types';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 
@@ -20,6 +21,8 @@ const SWIPE_THRESHOLD = 120;
 const SWIPE_OUT_DURATION = 300;
 const CARD_HEIGHT = SCREEN_HEIGHT * 0.55;
 const HINT_KEY = '@swipe_hint_shown';
+const TOAST_COUNT_KEY = '@like_toast_count';
+const MILESTONE_KEY = '@profile_milestone';
 
 export function HomeScreen({navigation}: {navigation: NativeStackNavigationProp<any>}) {
   const [quotes, setQuotes] = useState<Quote[]>([]);
@@ -27,6 +30,8 @@ export function HomeScreen({navigation}: {navigation: NativeStackNavigationProp<
   const [loading, setLoading] = useState(true);
   const [showHint, setShowHint] = useState(false);
   const [lastSwiped, setLastSwiped] = useState<{quote: Quote; index: number} | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const [milestone, setMilestone] = useState<string | null>(null);
   const {toggle, isFav} = useFavorites();
   const prefRef = useRef<Record<string, string> | undefined>();
   const seenIdsRef = useRef<Set<string>>(new Set());
@@ -61,18 +66,17 @@ export function HomeScreen({navigation}: {navigation: NativeStackNavigationProp<
     return () => clearTimeout(timer);
   }, [showHint, loading, hintOpacity, position]);
 
-  // 초기 로딩
+  // 초기 로딩 (한 번만 실행)
+  const loadedRef = useRef(false);
   useEffect(() => {
+    if (loadedRef.current) return;
+    loadedRef.current = true;
+
     getPreference().then(async pref => {
       const params: Record<string, string> = {};
       if (pref) {
-        params.situations = pref.situation_groups.join(',');
-        params.keywords = pref.keyword_groups.join(',');
-      }
-      if (profile && profile.total_interactions >= 5) {
-        params.kw_weights = JSON.stringify(profile.keyword_weights);
-        params.sit_weights = JSON.stringify(profile.situation_weights);
-        params.profile_strength = profile.profile_strength;
+        if (pref.situation_groups) params.situations = pref.situation_groups.join(',');
+        if (pref.keyword_groups) params.keywords = pref.keyword_groups.join(',');
       }
       prefRef.current = Object.keys(params).length > 0 ? params : undefined;
 
@@ -93,7 +97,7 @@ export function HomeScreen({navigation}: {navigation: NativeStackNavigationProp<
         setLoading(false);
       }
     });
-  }, [profile]);
+  }, []);
 
   const loadMore = useCallback(async () => {
     if (loadingMoreRef.current) return;
@@ -133,6 +137,30 @@ export function HomeScreen({navigation}: {navigation: NativeStackNavigationProp<
   }, [position]);
 
   // 최신 상태를 ref로 유지
+  const showLikeToast = useCallback(async () => {
+    const raw = await AsyncStorage.getItem(TOAST_COUNT_KEY);
+    const count = raw ? parseInt(raw, 10) : 0;
+    if (count < 5) {
+      setToast('취향에 반영됐어요');
+      await AsyncStorage.setItem(TOAST_COUNT_KEY, String(count + 1));
+    }
+  }, []);
+
+  // 마일스톤 체크
+  useEffect(() => {
+    if (!profile) return;
+    AsyncStorage.getItem(MILESTONE_KEY).then(prev => {
+      const current = profile.profile_strength;
+      if (!prev && current === 'moderate') {
+        setMilestone('추천이 더 정확해졌어요!');
+        AsyncStorage.setItem(MILESTONE_KEY, 'moderate');
+      } else if (prev === 'moderate' && current === 'strong') {
+        setMilestone('당신만의 명언 피드가 완성됐어요');
+        AsyncStorage.setItem(MILESTONE_KEY, 'strong');
+      }
+    });
+  }, [profile]);
+
   useEffect(() => {
     swipeCallbackRef.current = (direction: 'left' | 'right') => {
       const current = quotes[currentIndex];
@@ -140,6 +168,7 @@ export function HomeScreen({navigation}: {navigation: NativeStackNavigationProp<
         if (direction === 'left') {
           logInteraction({quote_id: current.id, type: 'like'});
           if (!isFav(current.id)) toggle(current.id);
+          showLikeToast();
         } else {
           logInteraction({quote_id: current.id, type: 'unlike'});
         }
@@ -155,7 +184,7 @@ export function HomeScreen({navigation}: {navigation: NativeStackNavigationProp<
         return next;
       });
     };
-  }, [quotes, currentIndex, isFav, toggle, showHint, loadMore]);
+  }, [quotes, currentIndex, isFav, toggle, showHint, loadMore, showLikeToast]);
 
   // PanResponder는 한 번만 생성
   const panResponder = useRef(
@@ -360,11 +389,20 @@ export function HomeScreen({navigation}: {navigation: NativeStackNavigationProp<
       .reverse();
   };
 
+  const isPersonalized = profile && (profile.profile_strength === 'moderate' || profile.profile_strength === 'strong');
+
   return (
     <View style={styles.container}>
       <Text style={styles.label}>
-        {currentIndex === 0 ? '오늘의 명언' : '추천 명언'}
+        {currentIndex === 0 ? '오늘의 명언' : isPersonalized ? '당신의 취향' : '추천 명언'}
       </Text>
+
+      {/* 마일스톤 배너 */}
+      {milestone && (
+        <TouchableOpacity style={styles.milestoneBanner} onPress={() => setMilestone(null)}>
+          <Text style={styles.milestoneText}>{milestone}</Text>
+        </TouchableOpacity>
+      )}
 
       <View style={styles.cardContainer}>
         {renderCards()}
@@ -416,6 +454,12 @@ export function HomeScreen({navigation}: {navigation: NativeStackNavigationProp<
           <Icon name="information-circle-outline" size={22} color={colors.textSecondary} />
         </TouchableOpacity>
       </View>
+
+      <Toast
+        message={toast || ''}
+        visible={!!toast}
+        onHide={() => setToast(null)}
+      />
     </View>
   );
 }
@@ -457,6 +501,20 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     letterSpacing: 2,
     textTransform: 'uppercase',
+  },
+  milestoneBanner: {
+    backgroundColor: colors.primaryDark,
+    marginHorizontal: 20,
+    marginBottom: 12,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  milestoneText: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '600',
   },
 
   // 카드 컨테이너
