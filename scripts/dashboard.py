@@ -1000,7 +1000,19 @@ def app_recommend():
         DESC LIMIT %s
     """, params)
     cols = [d[0] for d in cur.description]
-    rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+    rows = []
+    for r in cur.fetchall():
+        d = dict(zip(cols, r))
+        rows.append({
+            "id": d["id"], "text": d["text"], "text_original": d["text_original"],
+            "original_language": d["original_language"], "source": d["source"],
+            "impact_score": d["impact_score"],
+            "keywords": d["keywords"] or [], "situations": d["situations"] or [],
+            "author": {
+                "name": d["author_name"], "profession": d["profession"],
+                "nationality": d["nationality"],
+            },
+        })
     cur.close()
     conn.close()
     return jsonify(rows)
