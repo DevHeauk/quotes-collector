@@ -81,6 +81,20 @@ CREATE TABLE IF NOT EXISTS quotes (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 사용자 행동 로그 (암묵적 개인화용)
+CREATE TABLE IF NOT EXISTS user_interactions (
+    id VARCHAR(36) PRIMARY KEY,
+    device_id VARCHAR(64) NOT NULL,
+    quote_id VARCHAR(36) NOT NULL REFERENCES quotes(id),
+    interaction_type VARCHAR(20) NOT NULL,  -- like, unlike, share, view_detail, dwell
+    dwell_seconds FLOAT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_interactions_device ON user_interactions(device_id);
+CREATE INDEX IF NOT EXISTS idx_interactions_created ON user_interactions(created_at);
+CREATE INDEX IF NOT EXISTS idx_interactions_device_type ON user_interactions(device_id, interaction_type);
+
 -- 유사도 검색용 trigram 인덱스
 CREATE INDEX IF NOT EXISTS idx_quotes_text_trgm ON quotes USING gin (text gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_quotes_text_original_trgm ON quotes USING gin (text_original gin_trgm_ops);

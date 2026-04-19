@@ -1,37 +1,108 @@
-import React, {useEffect, useState} from 'react';
-import {View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Share} from 'react-native';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
+import {
+  View, Text, TouchableOpacity, StyleSheet, ActivityIndicator,
+  Share, FlatList, Dimensions, ViewToken,
+} from 'react-native';
 import {colors} from '../constants/colors';
-import {fetchDailyQuote} from '../api/client';
+import {fetchDailyQuote, fetchRecommend} from '../api/client';
 import {useFavorites} from '../hooks/useFavorites';
 import {getPreference} from '../storage/preferences';
+import {logInteraction} from '../storage/interactions';
+import {useInteractionSync} from '../hooks/useInteractionSync';
+import {useProfile} from '../hooks/useProfile';
 import type {Quote} from '../types';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 
+const {height: SCREEN_HEIGHT} = Dimensions.get('window');
+const DWELL_THRESHOLD_MS = 3000;
+const VIEWABILITY_CONFIG = {itemVisiblePercentThreshold: 70};
+
 export function HomeScreen({navigation}: {navigation: NativeStackNavigationProp<any>}) {
-  const [quote, setQuote] = useState<Quote | null>(null);
+  const [quotes, setQuotes] = useState<Quote[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const {toggle, isFav} = useFavorites();
+  const prefRef = useRef<Record<string, string> | undefined>();
+  const seenIdsRef = useRef<Set<string>>(new Set());
+  const dwellTimers = useRef<Map<string, number>>(new Map());
+  const profile = useProfile();
+
+  useInteractionSync();
 
   useEffect(() => {
     getPreference().then(pref => {
-      const params = pref
-        ? {
-            situations: pref.situation_groups.join(','),
-            keywords: pref.keyword_groups.join(','),
-          }
-        : undefined;
-      return fetchDailyQuote(params);
+      const params: Record<string, string> = {};
+      if (pref) {
+        params.situations = pref.situation_groups.join(',');
+        params.keywords = pref.keyword_groups.join(',');
+      }
+      // 프로필 가중치가 있으면 추천 파라미터에 포함
+      if (profile && profile.total_interactions >= 5) {
+        params.kw_weights = JSON.stringify(profile.keyword_weights);
+        params.sit_weights = JSON.stringify(profile.situation_weights);
+        params.profile_strength = profile.profile_strength;
+      }
+      prefRef.current = Object.keys(params).length > 0 ? params : undefined;
+      return fetchDailyQuote(prefRef.current);
     })
-      .then(setQuote)
+      .then(q => {
+        setQuotes([q]);
+        seenIdsRef.current.add(q.id);
+      })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, []);
+  }, [profile]);
 
-  const handleShare = async () => {
-    if (!quote) return;
-    const author = quote.author?.name || '알 수 없음';
-    await Share.share({message: `"${quote.text}"\n\n— ${author}`});
+  const loadMore = useCallback(async () => {
+    if (loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const exclude = Array.from(seenIdsRef.current).join(',');
+      const newQuotes = await fetchRecommend({
+        ...(prefRef.current || {}),
+        exclude,
+        limit: '3',
+      });
+      const fresh = newQuotes.filter(q => !seenIdsRef.current.has(q.id));
+      fresh.forEach(q => seenIdsRef.current.add(q.id));
+      if (fresh.length > 0) {
+        setQuotes(prev => [...prev, ...fresh]);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadingMore]);
+
+  const handleShare = async (q: Quote) => {
+    const author = q.author?.name || '알 수 없음';
+    await Share.share({message: `"${q.text}"\n\n— ${author}`});
+    logInteraction({quote_id: q.id, type: 'share'});
   };
+
+  const onViewableItemsChanged = useRef(({changed}: {changed: ViewToken[]}) => {
+    for (const token of changed) {
+      const quoteId = (token.item as Quote)?.id;
+      if (!quoteId) continue;
+      if (token.isViewable) {
+        dwellTimers.current.set(quoteId, Date.now());
+      } else {
+        const start = dwellTimers.current.get(quoteId);
+        if (start) {
+          const elapsed = Date.now() - start;
+          if (elapsed >= DWELL_THRESHOLD_MS) {
+            logInteraction({
+              quote_id: quoteId,
+              type: 'dwell',
+              metadata: {dwell_seconds: Math.round(elapsed / 1000)},
+            });
+          }
+          dwellTimers.current.delete(quoteId);
+        }
+      }
+    }
+  }).current;
 
   if (loading) {
     return (
@@ -41,7 +112,7 @@ export function HomeScreen({navigation}: {navigation: NativeStackNavigationProp<
     );
   }
 
-  if (!quote) {
+  if (quotes.length === 0) {
     return (
       <View style={styles.center}>
         <Text style={styles.errorText}>명언을 불러올 수 없습니다.</Text>
@@ -49,54 +120,87 @@ export function HomeScreen({navigation}: {navigation: NativeStackNavigationProp<
     );
   }
 
-  const fav = isFav(quote.id);
+  const renderQuote = ({item, index}: {item: Quote; index: number}) => {
+    const fav = isFav(item.id);
+    return (
+      <View style={[styles.page, {height: SCREEN_HEIGHT - 100}]}>
+        <Text style={styles.label}>
+          {index === 0 ? '오늘의 명언' : '추천 명언'}
+        </Text>
+
+        <TouchableOpacity
+          style={styles.quoteArea}
+          activeOpacity={0.8}
+          onPress={() => navigation.navigate('QuoteDetail', {quoteId: item.id})}>
+          <Text style={styles.quoteText}>"{item.text}"</Text>
+          {item.text_original && item.text_original !== item.text && (
+            <Text style={styles.originalText}>{item.text_original}</Text>
+          )}
+          <Text style={styles.author}>— {item.author?.name}</Text>
+          {item.author?.profession && (
+            <Text style={styles.profession}>{item.author.profession}</Text>
+          )}
+        </TouchableOpacity>
+
+        <View style={styles.actions}>
+          <TouchableOpacity style={styles.actionBtn} onPress={() => toggle(item.id)}>
+            <Text style={[styles.actionIcon, fav && {color: colors.heart}]}>
+              {fav ? '♥' : '♡'}
+            </Text>
+            <Text style={styles.actionLabel}>좋아요</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.actionBtn} onPress={() => handleShare(item)}>
+            <Text style={styles.actionIcon}>↗</Text>
+            <Text style={styles.actionLabel}>공유</Text>
+          </TouchableOpacity>
+        </View>
+
+        {item.keywords && item.keywords.length > 0 && (
+          <View style={styles.tags}>
+            {item.keywords.map(k => (
+              <View key={k} style={styles.tag}>
+                <Text style={styles.tagText}>#{k}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {index === 0 && (
+          <Text style={styles.swipeHint}>↑ 위로 스와이프하면 다음 명언</Text>
+        )}
+      </View>
+    );
+  };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.label}>오늘의 명언</Text>
-
-      <TouchableOpacity
-        style={styles.quoteArea}
-        activeOpacity={0.8}
-        onPress={() => navigation.navigate('QuoteDetail', {quoteId: quote.id})}>
-        <Text style={styles.quoteText}>"{quote.text}"</Text>
-        {quote.text_original && quote.text_original !== quote.text && (
-          <Text style={styles.originalText}>{quote.text_original}</Text>
-        )}
-        <Text style={styles.author}>— {quote.author?.name}</Text>
-        {quote.author?.profession && (
-          <Text style={styles.profession}>{quote.author.profession}</Text>
-        )}
-      </TouchableOpacity>
-
-      <View style={styles.actions}>
-        <TouchableOpacity style={styles.actionBtn} onPress={() => toggle(quote.id)}>
-          <Text style={[styles.actionIcon, fav && {color: colors.heart}]}>
-            {fav ? '♥' : '♡'}
-          </Text>
-          <Text style={styles.actionLabel}>좋아요</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.actionBtn} onPress={handleShare}>
-          <Text style={styles.actionIcon}>↗</Text>
-          <Text style={styles.actionLabel}>공유</Text>
-        </TouchableOpacity>
-      </View>
-
-      {quote.keywords && quote.keywords.length > 0 && (
-        <View style={styles.tags}>
-          {quote.keywords.map(k => (
-            <View key={k} style={styles.tag}>
-              <Text style={styles.tagText}>#{k}</Text>
-            </View>
-          ))}
-        </View>
-      )}
-    </View>
+    <FlatList
+      data={quotes}
+      keyExtractor={item => item.id}
+      renderItem={renderQuote}
+      pagingEnabled
+      snapToAlignment="start"
+      decelerationRate="fast"
+      snapToInterval={SCREEN_HEIGHT - 100}
+      showsVerticalScrollIndicator={false}
+      style={styles.container}
+      onEndReached={loadMore}
+      onEndReachedThreshold={0.5}
+      onViewableItemsChanged={onViewableItemsChanged}
+      viewabilityConfig={VIEWABILITY_CONFIG}
+      ListFooterComponent={
+        loadingMore ? (
+          <View style={styles.footer}>
+            <ActivityIndicator size="small" color={colors.primary} />
+          </View>
+        ) : null
+      }
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  container: {flex: 1, backgroundColor: colors.background, justifyContent: 'center', padding: 24},
+  container: {flex: 1, backgroundColor: colors.background},
+  page: {justifyContent: 'center', padding: 24},
   center: {flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background},
   errorText: {color: colors.textSecondary, fontSize: 16},
   label: {color: colors.textMuted, fontSize: 14, textAlign: 'center', marginBottom: 24, letterSpacing: 2, textTransform: 'uppercase'},
@@ -112,4 +216,6 @@ const styles = StyleSheet.create({
   tags: {flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', gap: 8, marginTop: 32},
   tag: {backgroundColor: colors.surfaceLight, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 5},
   tagText: {color: colors.textSecondary, fontSize: 13},
+  swipeHint: {color: colors.textMuted, fontSize: 12, textAlign: 'center', marginTop: 32, opacity: 0.6},
+  footer: {height: 60, justifyContent: 'center', alignItems: 'center'},
 });

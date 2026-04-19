@@ -11,12 +11,12 @@ async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
-export function fetchDailyQuote(params?: {situations?: string; keywords?: string; exclude?: string}): Promise<Quote> {
+export function fetchDailyQuote(params?: Record<string, string>): Promise<Quote> {
   const qs = params ? '?' + new URLSearchParams(params).toString() : '';
   return fetchJSON<Quote>(`${BASE}/daily${qs}`);
 }
 
-export function fetchRecommend(params: {situations?: string; keywords?: string; exclude?: string; limit?: string}): Promise<Quote[]> {
+export function fetchRecommend(params: Record<string, string>): Promise<Quote[]> {
   const qs = new URLSearchParams(params).toString();
   return fetchJSON<Quote[]>(`${BASE}/recommend?${qs}`);
 }

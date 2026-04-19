@@ -3,6 +3,7 @@ import {View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator,
 import {colors} from '../constants/colors';
 import {fetchQuoteDetail} from '../api/client';
 import {useFavorites} from '../hooks/useFavorites';
+import {logInteraction} from '../storage/interactions';
 import type {Quote} from '../types';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import type {RouteProp} from '@react-navigation/native';
@@ -19,6 +20,7 @@ export function QuoteDetailScreen({navigation, route}: Props) {
   const {toggle, isFav} = useFavorites();
 
   useEffect(() => {
+    logInteraction({quote_id: quoteId, type: 'view_detail'});
     fetchQuoteDetail(quoteId)
       .then(setQuote)
       .catch(console.error)
@@ -37,6 +39,7 @@ export function QuoteDetailScreen({navigation, route}: Props) {
 
   const handleShare = async () => {
     await Share.share({message: `"${quote.text}"\n\n— ${author?.name || '알 수 없음'}`});
+    logInteraction({quote_id: quote.id, type: 'share'});
   };
 
   return (

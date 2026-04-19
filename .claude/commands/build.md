@@ -69,4 +69,16 @@
 3. **리뷰 시 반드시 코드를 직접 읽을 것** — 추측 금지
 4. **MVP 단계 감안** — 과도한 추상화/최적화 요구 자제
 
+## 배포 (구현 완료 후)
+
+DB 스키마 변경이 있으면 Railway DB에 마이그레이션을 직접 실행합니다:
+
+```bash
+/opt/homebrew/bin/railway run psql -c "<SQL>"
+```
+
+- Railway CLI: `/opt/homebrew/bin/railway`
+- 프로젝트: quotes-collector / 서비스: quotes-dashboard
+- Railway 로그인 필요 시 사용자에게 `! /opt/homebrew/bin/railway login` 안내
+
 $ARGUMENTS
