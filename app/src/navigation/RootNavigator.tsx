@@ -1,8 +1,8 @@
 import React from 'react';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
-import {Text} from 'react-native';
 import {colors} from '../constants/colors';
+import Icon from 'react-native-vector-icons/Ionicons';
 
 import {HomeScreen} from '../screens/HomeScreen';
 import {ExploreScreen} from '../screens/ExploreScreen';
@@ -48,11 +48,14 @@ function FavoritesStack() {
 }
 
 function TabIcon({label, focused}: {label: string; focused: boolean}) {
-  const icons: Record<string, string> = {'홈': '◉', '탐색': '◎', '좋아요': '♥'};
+  const iconMap: Record<string, [string, string]> = {
+    '홈': ['home', 'home-outline'],
+    '탐색': ['compass', 'compass-outline'],
+    '좋아요': ['heart', 'heart-outline'],
+  };
+  const [filled, outline] = iconMap[label] || ['ellipse', 'ellipse-outline'];
   return (
-    <Text style={{fontSize: 20, color: focused ? colors.primary : colors.textMuted}}>
-      {icons[label] || '•'}
-    </Text>
+    <Icon name={focused ? filled : outline} size={22} color={focused ? colors.primary : colors.textMuted} />
   );
 }
 

@@ -1,5 +1,6 @@
 import React from 'react';
 import {View, Text, TouchableOpacity, StyleSheet} from 'react-native';
+import Icon from 'react-native-vector-icons/Ionicons';
 import {colors} from '../constants/colors';
 import type {Quote} from '../types';
 
@@ -20,9 +21,11 @@ export function QuoteCard({quote, isFavorite, onPress, onToggleFavorite}: Props)
       <View style={styles.bottom}>
         <Text style={styles.author}>— {authorName}</Text>
         <TouchableOpacity onPress={onToggleFavorite} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
-          <Text style={[styles.heart, isFavorite && styles.heartActive]}>
-            {isFavorite ? '♥' : '♡'}
-          </Text>
+          <Icon
+            name={isFavorite ? 'thumbs-up' : 'thumbs-up-outline'}
+            size={22}
+            color={isFavorite ? colors.success : colors.heartInactive}
+          />
         </TouchableOpacity>
       </View>
       {quote.keywords && quote.keywords.length > 0 && (

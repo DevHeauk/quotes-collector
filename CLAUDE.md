@@ -84,6 +84,7 @@ python scripts/dashboard.py
 4. **API**: `api/client.ts`의 `fetchJSON<T>()` 헬퍼 사용. 직접 fetch 호출 금지.
 5. **로컬 저장**: AsyncStorage 사용. 키 prefix `@` (예: `@favorites`, `@device_id`).
 6. **타입**: `types/index.ts`에 공유 타입 정의. any 사용 금지.
+7. **아이콘**: `react-native-vector-icons/Ionicons` 사용. 이모지(emoji) 사용 금지.
 
 ### 공통
 
