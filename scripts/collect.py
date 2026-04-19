@@ -336,6 +336,47 @@ def determine_source_reliability(quote: dict) -> str:
     return "attributed"
 
 
+_NEED_MAP = {
+    "motivation": {
+        "keywords": {"끈기", "노력", "도전", "용기", "행동", "인내", "열정", "목표", "성공", "실패", "실천", "동기부여"},
+        "situations": {"게으를 때", "꾸준함이 필요할 때", "목표가 멀게 느껴질 때", "포기하고 싶을 때", "도전을 망설일 때"},
+    },
+    "comfort": {
+        "keywords": {"고통", "회복", "희망", "외로움", "두려움"},
+        "situations": {"힘든 시기를 보낼 때", "절망적일 때", "좌절했을 때", "실패했을 때", "외로울 때", "희망이 필요할 때", "힘든 상황에서 거리를 두고 싶을 때", "불운할 때", "두려울 때"},
+    },
+    "reflection": {
+        "keywords": {"철학", "존재", "자아", "의미", "자기성찰", "인생", "시간", "죽음", "운명", "선택", "초월"},
+        "situations": {"자기 성찰", "삶의 의미를 찾을 때", "인생의 선택", "과거를 돌아볼 때", "죽음을 생각할 때", "현재를 살고 싶을 때", "변화를 마주할 때", "미래가 불안할 때"},
+    },
+    "insight": {
+        "keywords": {"학습", "지식", "지혜", "겸손", "교육", "창의성"},
+        "situations": {"배움의 자세", "지식의 가치", "깊이 이해하고 싶을 때", "공부하기 싫을 때", "새로운 관점이 필요할 때", "과학적 사고", "창의적 사고"},
+    },
+    "relationship": {
+        "keywords": {"사랑", "관계", "우정", "가족", "헌신", "감사", "공동체"},
+        "situations": {"관계의 소중함", "관계가 어려울 때", "사랑을 느낄 때", "사랑의 본질을 고민할 때", "감사할 때"},
+    },
+    "humor": {
+        "keywords": {"유머", "위트"},
+        "situations": {"웃음이 필요할 때", "일상의 소소함", "기분 전환이 필요할 때"},
+    },
+}
+
+
+def _compute_need_types(keywords, situations):
+    kws = set(keywords) if isinstance(keywords, list) else set()
+    sits = set(situations) if isinstance(situations, list) else set()
+    scores = {}
+    for need, m in _NEED_MAP.items():
+        score = len(kws & m["keywords"]) + len(sits & m["situations"]) * 2
+        if score > 0:
+            scores[need] = score
+    if not scores:
+        return ["reflection"]
+    return [n for n, _ in sorted(scores.items(), key=lambda x: -x[1])[:3]]
+
+
 def save_quotes(quotes: list[dict], masters: dict, dry_run: bool = False, collection_log_id: str | None = None) -> dict:
     """명언 목록을 PostgreSQL에 저장한다."""
     stats = {"saved": 0, "duplicates": 0, "errors": 0}
@@ -370,11 +411,12 @@ def save_quotes(quotes: list[dict], masters: dict, dry_run: bool = False, collec
             situation_ids = resolve_situation_ids(cursor, q.get("situation", []), masters)
 
             reliability = determine_source_reliability(q)
+            need_types = _compute_need_types(q.get("keywords", []), q.get("situation", []))
             quote_id = str(uuid.uuid4())
             cursor.execute(
                 """INSERT INTO quotes (id, text, text_original, original_language, author_id, source, year,
-                   keywords, situation, keyword_ids, situation_ids, status, source_reliability, collection_log_id)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                   keywords, situation, keyword_ids, situation_ids, need_types, status, source_reliability, collection_log_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     quote_id,
                     q["text"],
@@ -387,6 +429,7 @@ def save_quotes(quotes: list[dict], masters: dict, dry_run: bool = False, collec
                     json.dumps(q.get("situation", []), ensure_ascii=False),
                     keyword_ids,
                     situation_ids,
+                    need_types,
                     "draft",
                     reliability,
                     collection_log_id,

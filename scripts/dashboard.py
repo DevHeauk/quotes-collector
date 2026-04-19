@@ -670,13 +670,16 @@ def _quote_to_dict(row, cols):
 def _build_personalization(args):
     """개인화 파라미터에서 WHERE/ORDER BY 조건과 params를 빌드.
 
-    프로필 가중치(kw_weights, sit_weights)가 있으면 동적 보너스를 적용하고,
-    없으면 온보딩 선택(situations, keywords) 기반 고정 보너스를 사용한다.
+    needs 파라미터(신규): need_types 배열 매칭 보너스 (1차 시그널).
+    situations/keywords(레거시): 기존 그룹 매칭 보너스 (2차 시그널).
+    프로필 가중치(kw_weights, sit_weights): 행동 기반 보너스 (3차 시그널).
     profile_strength에 따라 온보딩/행동 비율을 혼합한다.
     """
+    needs_raw = args.get("needs", "")
     sit_groups = args.get("situations", "")
     kw_groups = args.get("keywords", "")
     exclude_ids = args.get("exclude", "")
+    needs_list = [n.strip() for n in needs_raw.split(",") if n.strip()]
     sit_list = [s.strip() for s in sit_groups.split(",") if s.strip()]
     kw_list = [k.strip() for k in kw_groups.split(",") if k.strip()]
     exclude_list = [e.strip() for e in exclude_ids.split(",") if e.strip()]
@@ -706,7 +709,15 @@ def _build_personalization(args):
     bonus_clauses = []
     where_clauses = []
 
-    # 온보딩 기반 보너스 (비율 적용)
+    # 1차: need_types 매칭 보너스 (가장 강한 시그널)
+    if needs_list and onboarding_ratio > 0:
+        bonus_clauses.append(f"""
+            CASE WHEN q.need_types && %s::varchar[]
+            THEN {4 * onboarding_ratio:.2f} ELSE 0 END
+        """)
+        params.append(needs_list)
+
+    # 2차: 레거시 온보딩 보너스 (하위 호환)
     if sit_list and onboarding_ratio > 0:
         bonus_clauses.append(f"""
             CASE WHEN EXISTS (
@@ -725,7 +736,7 @@ def _build_personalization(args):
         """)
         params.append(kw_list)
 
-    # 행동 기반 동적 보너스 (프로필 가중치 × 5 × behavior_ratio)
+    # 3차: 행동 기반 동적 보너스 (프로필 가중치 × 5 × behavior_ratio)
     if kw_weights and behavior_ratio > 0:
         for group_name, weight in kw_weights.items():
             bonus_val = weight * 5 * behavior_ratio
@@ -989,6 +1000,7 @@ def app_recommend():
 
     cur.execute(f"""
         SELECT q.id, q.text, q.text_original, q.original_language, q.source, q.impact_score,
+               q.need_types,
                a.name as author_name, p.name as profession, a.nationality,
                ARRAY(SELECT k.name FROM keywords k WHERE k.id = ANY(q.keyword_ids)) as keywords,
                ARRAY(SELECT s.name FROM situations s WHERE s.id = ANY(q.situation_ids)) as situations
@@ -1007,6 +1019,7 @@ def app_recommend():
             "id": d["id"], "text": d["text"], "text_original": d["text_original"],
             "original_language": d["original_language"], "source": d["source"],
             "impact_score": d["impact_score"],
+            "need_types": d["need_types"] or [],
             "keywords": d["keywords"] or [], "situations": d["situations"] or [],
             "author": {
                 "name": d["author_name"], "profession": d["profession"],

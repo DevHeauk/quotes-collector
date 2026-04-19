@@ -75,8 +75,9 @@ CREATE TABLE IF NOT EXISTS quotes (
     situation JSONB NOT NULL,
     keyword_ids VARCHAR(36)[],
     situation_ids VARCHAR(36)[],
-    status VARCHAR(20) NOT NULL DEFAULT 'draft',       -- draft / reviewed / published / rejected
-    source_reliability VARCHAR(20) DEFAULT 'unknown',  -- verified / attributed / disputed / unknown
+    need_types VARCHAR(20)[],                            -- motivation / comfort / reflection / insight / relationship / humor
+    status VARCHAR(20) NOT NULL DEFAULT 'draft',         -- draft / reviewed / published / rejected
+    source_reliability VARCHAR(20) DEFAULT 'unknown',    -- verified / attributed / disputed / unknown
     collection_log_id VARCHAR(36) REFERENCES collection_logs(id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -98,3 +99,4 @@ CREATE INDEX IF NOT EXISTS idx_interactions_device_type ON user_interactions(dev
 -- 유사도 검색용 trigram 인덱스
 CREATE INDEX IF NOT EXISTS idx_quotes_text_trgm ON quotes USING gin (text gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_quotes_text_original_trgm ON quotes USING gin (text_original gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_quotes_need_types ON quotes USING gin (need_types);

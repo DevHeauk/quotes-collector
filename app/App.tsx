@@ -4,8 +4,7 @@ import {NavigationContainer} from '@react-navigation/native';
 import {SafeAreaProvider} from 'react-native-safe-area-context';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import {RootNavigator} from './src/navigation/RootNavigator';
-import {SituationPickerScreen} from './src/screens/onboarding/SituationPickerScreen';
-import {KeywordPickerScreen} from './src/screens/onboarding/KeywordPickerScreen';
+import {NeedPickerScreen} from './src/screens/onboarding/NeedPickerScreen';
 import {QuoteTasteScreen} from './src/screens/onboarding/QuoteTasteScreen';
 import {SplashScreen} from './src/screens/SplashScreen';
 import {isOnboardingCompleted} from './src/storage/preferences';
@@ -44,9 +43,8 @@ function App() {
       <NavigationContainer>
         <Stack.Navigator
           screenOptions={{headerShown: false}}
-          initialRouteName={onboarded ? 'Main' : 'SituationPicker'}>
-          <Stack.Screen name="SituationPicker" component={SituationPickerScreen} />
-          <Stack.Screen name="KeywordPicker" component={KeywordPickerScreen} />
+          initialRouteName={onboarded ? 'Main' : 'NeedPicker'}>
+          <Stack.Screen name="NeedPicker" component={NeedPickerScreen} />
           <Stack.Screen name="QuoteTaste" component={QuoteTasteScreen} />
           <Stack.Screen name="Main" component={RootNavigator} />
         </Stack.Navigator>
