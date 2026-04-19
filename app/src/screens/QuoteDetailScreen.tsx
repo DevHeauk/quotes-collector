@@ -1,9 +1,11 @@
 import React, {useEffect, useState} from 'react';
-import {View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Share} from 'react-native';
+import {View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Share, Alert} from 'react-native';
 import {colors} from '../constants/colors';
-import {fetchQuoteDetail} from '../api/client';
+import Icon from 'react-native-vector-icons/Ionicons';
+import {fetchQuoteDetail, adminDeleteQuote} from '../api/client';
 import {useFavorites} from '../hooks/useFavorites';
 import {logInteraction} from '../storage/interactions';
+import {getAdminToken} from '../storage/admin';
 import type {Quote} from '../types';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import type {RouteProp} from '@react-navigation/native';
@@ -17,10 +19,12 @@ export function QuoteDetailScreen({navigation, route}: Props) {
   const {quoteId} = route.params;
   const [quote, setQuote] = useState<Quote | null>(null);
   const [loading, setLoading] = useState(true);
+  const [adminToken, setAdminTokenState] = useState<string | null>(null);
   const {toggle, isFav} = useFavorites();
 
   useEffect(() => {
     logInteraction({quote_id: quoteId, type: 'view_detail'});
+    getAdminToken().then(setAdminTokenState);
     fetchQuoteDetail(quoteId)
       .then(setQuote)
       .catch(console.error)
@@ -40,6 +44,30 @@ export function QuoteDetailScreen({navigation, route}: Props) {
   const handleShare = async () => {
     await Share.share({message: `"${quote.text}"\n\n— ${author?.name || '알 수 없음'}`});
     logInteraction({quote_id: quote.id, type: 'share'});
+  };
+
+  const handleDislike = () => {
+    logInteraction({quote_id: quote.id, type: 'unlike'});
+    Alert.alert('피드백 반영', '이 명언이 추천에서 줄어듭니다.');
+  };
+
+  const handleAdminDelete = () => {
+    if (!adminToken) return;
+    Alert.alert('명언 삭제', `"${quote.text.slice(0, 30)}..."을 삭제하시겠습니까?`, [
+      {text: '취소', style: 'cancel'},
+      {
+        text: '삭제', style: 'destructive',
+        onPress: async () => {
+          try {
+            await adminDeleteQuote(quote.id, adminToken);
+            Alert.alert('삭제 완료', '명언이 삭제되었습니다.');
+            navigation.goBack();
+          } catch {
+            Alert.alert('오류', '삭제에 실패했습니다.');
+          }
+        },
+      },
+    ]);
   };
 
   return (
@@ -62,14 +90,24 @@ export function QuoteDetailScreen({navigation, route}: Props) {
 
       <View style={styles.actions}>
         <TouchableOpacity style={styles.actionBtn} onPress={() => toggle(quote.id)}>
-          <Text style={[styles.actionIcon, fav && {color: colors.heart}]}>{fav ? '♥' : '♡'}</Text>
+          <Icon name={fav ? 'thumbs-up' : 'thumbs-up-outline'} size={26} color={fav ? colors.success : colors.textSecondary} />
           <Text style={styles.actionLabel}>좋아요</Text>
         </TouchableOpacity>
+        <TouchableOpacity style={styles.actionBtn} onPress={handleDislike}>
+          <Icon name="thumbs-down-outline" size={26} color={colors.textSecondary} />
+          <Text style={styles.actionLabel}>별로예요</Text>
+        </TouchableOpacity>
         <TouchableOpacity style={styles.actionBtn} onPress={handleShare}>
-          <Text style={styles.actionIcon}>↗</Text>
+          <Icon name="share-outline" size={26} color={colors.textSecondary} />
           <Text style={styles.actionLabel}>공유</Text>
         </TouchableOpacity>
       </View>
+
+      {adminToken && (
+        <TouchableOpacity style={styles.adminDeleteBtn} onPress={handleAdminDelete}>
+          <Text style={styles.adminDeleteText}>관리자: 이 명언 삭제</Text>
+        </TouchableOpacity>
+      )}
 
       {quote.keywords && quote.keywords.length > 0 && (
         <View style={styles.section}>
@@ -132,4 +170,13 @@ const styles = StyleSheet.create({
   tagText: {color: colors.textSecondary, fontSize: 13},
   relatedItem: {paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border},
   relatedText: {color: colors.text, fontSize: 14, lineHeight: 22},
+  adminDeleteBtn: {
+    marginTop: 32,
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.heart,
+    alignItems: 'center',
+  },
+  adminDeleteText: {color: colors.heart, fontSize: 14, fontWeight: '500'},
 });

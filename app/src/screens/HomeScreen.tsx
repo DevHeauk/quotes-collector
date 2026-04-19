@@ -4,6 +4,7 @@ import {
   Share, FlatList, Dimensions, ViewToken,
 } from 'react-native';
 import {colors} from '../constants/colors';
+import Icon from 'react-native-vector-icons/Ionicons';
 import {fetchDailyQuote, fetchRecommend} from '../api/client';
 import {useFavorites} from '../hooks/useFavorites';
 import {getPreference} from '../storage/preferences';
@@ -144,13 +145,17 @@ export function HomeScreen({navigation}: {navigation: NativeStackNavigationProp<
 
         <View style={styles.actions}>
           <TouchableOpacity style={styles.actionBtn} onPress={() => toggle(item.id)}>
-            <Text style={[styles.actionIcon, fav && {color: colors.heart}]}>
-              {fav ? '♥' : '♡'}
-            </Text>
+            <Icon name={fav ? 'thumbs-up' : 'thumbs-up-outline'} size={26} color={fav ? colors.success : colors.textSecondary} />
             <Text style={styles.actionLabel}>좋아요</Text>
           </TouchableOpacity>
+          <TouchableOpacity style={styles.actionBtn} onPress={() => {
+            logInteraction({quote_id: item.id, type: 'unlike'});
+          }}>
+            <Icon name="thumbs-down-outline" size={26} color={colors.textSecondary} />
+            <Text style={styles.actionLabel}>별로예요</Text>
+          </TouchableOpacity>
           <TouchableOpacity style={styles.actionBtn} onPress={() => handleShare(item)}>
-            <Text style={styles.actionIcon}>↗</Text>
+            <Icon name="share-outline" size={26} color={colors.textSecondary} />
             <Text style={styles.actionLabel}>공유</Text>
           </TouchableOpacity>
         </View>
