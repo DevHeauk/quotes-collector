@@ -744,6 +744,80 @@ def admin_raw_quotes_list():
     return jsonify({"quotes": rows, "total": len(rows)})
 
 
+@app.route("/admin/api/sync", methods=["POST"])
+@require_admin
+def admin_sync():
+    """로컬 DB → 프로덕션 동기화. authors + quotes upsert."""
+    data = request.get_json()
+    authors = data.get("authors", [])
+    quotes_data = data.get("quotes", [])
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    # 1) professions/fields upsert
+    for table in ("professions", "fields"):
+        for item in data.get(table, []):
+            cur.execute(f"""
+                INSERT INTO {table} (id, name) VALUES (%s, %s)
+                ON CONFLICT (id) DO NOTHING
+            """, (item["id"], item["name"]))
+
+    # 2) authors upsert
+    author_saved = 0
+    for a in authors:
+        cur.execute("""
+            INSERT INTO authors (id, name, nationality, birth_year, profession_id, field_id)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (id) DO UPDATE SET
+                name = EXCLUDED.name,
+                nationality = EXCLUDED.nationality,
+                birth_year = EXCLUDED.birth_year,
+                profession_id = EXCLUDED.profession_id,
+                field_id = EXCLUDED.field_id
+        """, (a["id"], a["name"], a.get("nationality", ""),
+              a.get("birth_year", 0), a.get("profession_id"), a.get("field_id")))
+        author_saved += 1
+
+    # 3) quotes upsert
+    quote_saved = 0
+    for q in quotes_data:
+        cur.execute("""
+            INSERT INTO quotes (id, text, text_original, original_language, author_id, source,
+                keywords, situation, keyword_ids, situation_ids, need_types,
+                impact_score, status, source_reliability, collection_log_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (id) DO UPDATE SET
+                text = EXCLUDED.text,
+                impact_score = EXCLUDED.impact_score,
+                status = EXCLUDED.status,
+                keyword_ids = EXCLUDED.keyword_ids,
+                situation_ids = EXCLUDED.situation_ids,
+                need_types = EXCLUDED.need_types
+        """, (
+            q["id"], q["text"], q.get("text_original"), q.get("original_language"),
+            q["author_id"], q.get("source"),
+            q.get("keywords", "[]"), q.get("situation", "[]"),
+            q.get("keyword_ids", []), q.get("situation_ids", []),
+            q.get("need_types", []), q.get("impact_score", 3),
+            q.get("status", "draft"), q.get("source_reliability", "unknown"),
+            q.get("collection_log_id"),
+        ))
+        quote_saved += 1
+
+    # 4) 프로덕션에만 있고 로컬에서 삭제된 quotes 처리
+    delete_ids = data.get("delete_quote_ids", [])
+    deleted = 0
+    for qid in delete_ids:
+        cur.execute("DELETE FROM quotes WHERE id = %s", (qid,))
+        deleted += cur.rowcount
+
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"authors": author_saved, "quotes": quote_saved, "deleted": deleted})
+
+
 # ===========================================================================
 # App API (모바일 앱 전용)
 # ===========================================================================
