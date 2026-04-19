@@ -2,6 +2,7 @@ import React, {useEffect, useState} from 'react';
 import {View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView, Alert} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {colors} from '../../constants/colors';
+import Icon from 'react-native-vector-icons/Ionicons';
 import {fetchRecommend} from '../../api/client';
 import {savePreference} from '../../storage/preferences';
 import {addFavorite} from '../../storage/favorites';
@@ -87,7 +88,7 @@ export function QuoteTasteScreen({navigation, route}: Props) {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.step}>3 / 3</Text>
-        <Text style={styles.title}>마음에 드는 명언에 {'\n'}♥를 눌러보세요</Text>
+        <Text style={styles.title}>마음에 드는 명언을{'\n'}골라보세요</Text>
         <Text style={styles.subtitle}>취향을 파악하는 데 도움이 돼요</Text>
       </View>
 
@@ -103,9 +104,11 @@ export function QuoteTasteScreen({navigation, route}: Props) {
               <Text style={styles.quoteText}>"{q.text}"</Text>
               <View style={styles.cardBottom}>
                 <Text style={styles.author}>— {q.author?.name || q.author_name}</Text>
-                <Text style={[styles.heart, isLiked && styles.heartActive]}>
-                  {isLiked ? '♥' : '♡'}
-                </Text>
+                <Icon
+                  name={isLiked ? 'heart' : 'heart-outline'}
+                  size={26}
+                  color={isLiked ? colors.heart : colors.heartInactive}
+                />
               </View>
             </TouchableOpacity>
           );
