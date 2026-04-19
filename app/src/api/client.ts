@@ -49,3 +49,11 @@ export function fetchQuotesBatch(ids: string[]): Promise<Quote[]> {
     body: JSON.stringify({ids}),
   });
 }
+
+export async function adminDeleteQuote(quoteId: string, token: string): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/admin/api/quotes/${quoteId}`, {
+    method: 'DELETE',
+    headers: {Authorization: `Bearer ${token}`},
+  });
+  if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
+}
