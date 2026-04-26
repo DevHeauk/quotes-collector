@@ -25,7 +25,7 @@ react {
 
     /* Bundling */
     //   A list containing the node command and its flags. Default is just 'node'.
-    // nodeExecutableAndArgs = ["node"]
+    nodeExecutableAndArgs = System.getenv("CI") ? ["node"] : ["/opt/homebrew/bin/node"]
     //
     //   The command to run when bundling. By default is 'bundle'
     // bundleCommand = "ram-bundle"
@@ -93,10 +93,10 @@ android {
             keyPassword 'android'
         }
         release {
-            storeFile file('daily-quote-release.keystore')
-            storePassword 'DailyQuote2026!'
-            keyAlias 'daily-quote-key'
-            keyPassword 'DailyQuote2026!'
+            storeFile file(System.getenv("KEYSTORE_FILE") ?: 'daily-quote-release.keystore')
+            storePassword System.getenv("KEYSTORE_PASSWORD") ?: 'DailyQuote2026!'
+            keyAlias System.getenv("KEY_ALIAS") ?: 'daily-quote-key'
+            keyPassword System.getenv("KEY_PASSWORD") ?: 'DailyQuote2026!'
         }
     }
     buildTypes {
