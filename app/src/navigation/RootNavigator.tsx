@@ -3,6 +3,7 @@ import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import {colors} from '../constants/colors';
 import Icon from 'react-native-vector-icons/Ionicons';
+import {useResponsive} from '../hooks/useResponsive';
 
 import {HomeScreen} from '../screens/HomeScreen';
 import {ExploreScreen} from '../screens/ExploreScreen';
@@ -60,11 +61,18 @@ function TabIcon({label, focused}: {label: string; focused: boolean}) {
 }
 
 export function RootNavigator() {
+  // 태블릿/폴드 펼침에서는 하단 탭 대신 좌측 네비게이션 레일을 사용한다.
+  const {isCompact} = useResponsive();
   return (
     <Tab.Navigator
       screenOptions={({route}) => ({
         headerShown: false,
-        tabBarStyle: {backgroundColor: colors.background, borderTopColor: colors.border},
+        tabBarPosition: isCompact ? 'bottom' : 'left',
+        tabBarStyle: {
+          backgroundColor: colors.background,
+          borderTopColor: colors.border,
+          borderRightColor: colors.border,
+        },
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textMuted,
         tabBarIcon: ({focused}) => <TabIcon label={route.name} focused={focused} />,

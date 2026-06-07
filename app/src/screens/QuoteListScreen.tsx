@@ -1,8 +1,9 @@
 import React, {useEffect, useState, useCallback} from 'react';
-import {View, FlatList, StyleSheet, ActivityIndicator, Text} from 'react-native';
+import {View, StyleSheet, ActivityIndicator, Text} from 'react-native';
 import {colors} from '../constants/colors';
 import {fetchQuotes} from '../api/client';
 import {QuoteCard} from '../components/QuoteCard';
+import {ResponsiveGrid} from '../components/ResponsiveGrid';
 import {useFavorites} from '../hooks/useFavorites';
 import type {Quote} from '../types';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
@@ -56,7 +57,7 @@ export function QuoteListScreen({navigation, route}: Props) {
   }
 
   return (
-    <FlatList
+    <ResponsiveGrid
       style={styles.container}
       data={quotes}
       keyExtractor={item => item.id}

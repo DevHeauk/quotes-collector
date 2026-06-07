@@ -1,10 +1,11 @@
 import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ActivityIndicator,
-  Share, Dimensions, Animated, PanResponder,
+  Share, Animated, PanResponder,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {colors} from '../constants/colors';
+import {useResponsive} from '../hooks/useResponsive';
 import Icon from 'react-native-vector-icons/Ionicons';
 import {fetchDailyQuote, fetchRecommend} from '../api/client';
 import {useFavorites} from '../hooks/useFavorites';
@@ -16,10 +17,10 @@ import {Toast} from '../components/Toast';
 import type {Quote} from '../types';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 
-const {width: SCREEN_WIDTH, height: SCREEN_HEIGHT} = Dimensions.get('window');
 const SWIPE_THRESHOLD = 120;
 const SWIPE_OUT_DURATION = 300;
-const CARD_HEIGHT = SCREEN_HEIGHT * 0.55;
+const CARD_MAX_WIDTH = 520; // 태블릿/폴드 펼침에서 카드가 과하게 커지지 않도록 캡
+const CARD_MAX_HEIGHT = 620;
 const HINT_KEY = '@swipe_hint_shown';
 const TOAST_COUNT_KEY = '@like_toast_count';
 const MILESTONE_KEY = '@profile_milestone';
@@ -33,6 +34,12 @@ export function HomeScreen({navigation}: {navigation: NativeStackNavigationProp<
   const [toast, setToast] = useState<string | null>(null);
   const [milestone, setMilestone] = useState<string | null>(null);
   const {toggle, isFav} = useFavorites();
+  const {width, height} = useResponsive();
+  // 한 번만 생성되는 PanResponder가 최신 화면 폭을 참조하도록 ref로 보관(폴드 반응).
+  const widthRef = useRef(width);
+  widthRef.current = width;
+  const CARD_WIDTH = Math.min(width - 40, CARD_MAX_WIDTH);
+  const CARD_HEIGHT = Math.min(height * 0.55, CARD_MAX_HEIGHT);
   const prefRef = useRef<Record<string, string> | undefined>();
   const seenIdsRef = useRef<Set<string>>(new Set());
   const loadingMoreRef = useRef(false);
@@ -123,7 +130,7 @@ export function HomeScreen({navigation}: {navigation: NativeStackNavigationProp<
 
   // swipeCard를 ref로 관리하여 PanResponder 재생성 불필요
   const swipeCard = useCallback((direction: 'left' | 'right') => {
-    const toX = direction === 'left' ? -SCREEN_WIDTH * 1.5 : SCREEN_WIDTH * 1.5;
+    const toX = direction === 'left' ? -widthRef.current * 1.5 : widthRef.current * 1.5;
 
     Animated.timing(position, {
       toValue: {x: toX, y: 0},
@@ -195,7 +202,7 @@ export function HomeScreen({navigation}: {navigation: NativeStackNavigationProp<
       },
       onPanResponderRelease: (_, gs) => {
         if (gs.dx < -SWIPE_THRESHOLD) {
-          const toX = -SCREEN_WIDTH * 1.5;
+          const toX = -widthRef.current * 1.5;
           Animated.timing(position, {
             toValue: {x: toX, y: 0},
             duration: SWIPE_OUT_DURATION,
@@ -205,7 +212,7 @@ export function HomeScreen({navigation}: {navigation: NativeStackNavigationProp<
             requestAnimationFrame(() => position.setValue({x: 0, y: 0}));
           });
         } else if (gs.dx > SWIPE_THRESHOLD) {
-          const toX = SCREEN_WIDTH * 1.5;
+          const toX = widthRef.current * 1.5;
           Animated.timing(position, {
             toValue: {x: toX, y: 0},
             duration: SWIPE_OUT_DURATION,
@@ -291,18 +298,18 @@ export function HomeScreen({navigation}: {navigation: NativeStackNavigationProp<
 
   // 애니메이션 보간
   const rotate = position.x.interpolate({
-    inputRange: [-SCREEN_WIDTH, 0, SCREEN_WIDTH],
+    inputRange: [-width, 0, width],
     outputRange: ['-12deg', '0deg', '12deg'],
   });
 
   const likeOpacity = position.x.interpolate({
-    inputRange: [-SCREEN_WIDTH / 2, -SWIPE_THRESHOLD / 2, 0],
+    inputRange: [-width / 2, -SWIPE_THRESHOLD / 2, 0],
     outputRange: [1, 0.8, 0],
     extrapolate: 'clamp',
   });
 
   const nopeOpacity = position.x.interpolate({
-    inputRange: [0, SWIPE_THRESHOLD / 2, SCREEN_WIDTH / 2],
+    inputRange: [0, SWIPE_THRESHOLD / 2, width / 2],
     outputRange: [0, 0.8, 1],
     extrapolate: 'clamp',
   });
@@ -323,6 +330,8 @@ export function HomeScreen({navigation}: {navigation: NativeStackNavigationProp<
                 styles.card,
                 styles.cardTop,
                 {
+                  width: CARD_WIDTH,
+                  minHeight: CARD_HEIGHT,
                   transform: [
                     {translateX: position.x},
                     {translateY: position.y},
@@ -374,6 +383,8 @@ export function HomeScreen({navigation}: {navigation: NativeStackNavigationProp<
             style={[
               styles.card,
               {
+                width: CARD_WIDTH,
+                minHeight: CARD_HEIGHT,
                 top: stackTop,
                 transform: [{scale: stackScale}],
                 zIndex: -i,
@@ -524,8 +535,6 @@ const styles = StyleSheet.create({
   },
   card: {
     position: 'absolute',
-    width: SCREEN_WIDTH - 40,
-    minHeight: CARD_HEIGHT,
     backgroundColor: colors.surface,
     borderRadius: 20,
     borderWidth: 1,

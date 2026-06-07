@@ -2,6 +2,7 @@ import React, {useState} from 'react';
 import {View, Text, TouchableOpacity, StyleSheet} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {colors} from '../../constants/colors';
+import {ResponsiveContainer} from '../../components/ResponsiveContainer';
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 import type {OnboardingStackParamList} from '../../types/navigation';
 
@@ -27,6 +28,7 @@ export function SituationPickerScreen({navigation}: Props) {
 
   return (
     <SafeAreaView style={styles.container}>
+      <ResponsiveContainer style={styles.inner}>
       <View style={styles.header}>
         <Text style={styles.step}>1 / 3</Text>
         <Text style={styles.title}>지금 어떤 상황인가요?</Text>
@@ -56,12 +58,14 @@ export function SituationPickerScreen({navigation}: Props) {
         onPress={() => navigation.navigate('KeywordPicker', {situations: selected})}>
         <Text style={styles.nextText}>다음</Text>
       </TouchableOpacity>
+      </ResponsiveContainer>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {flex: 1, backgroundColor: colors.background, padding: 24},
+  container: {flex: 1, backgroundColor: colors.background},
+  inner: {padding: 24},
   header: {marginTop: 20, marginBottom: 32},
   step: {color: colors.primary, fontSize: 14, fontWeight: '600', marginBottom: 8},
   title: {color: colors.text, fontSize: 24, fontWeight: '700', marginBottom: 8},
