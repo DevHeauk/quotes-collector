@@ -492,14 +492,23 @@ def admin_quotes_retranslate(quote_id):
 
 @app.route("/admin")
 def admin_console():
-    """관리자 콘솔 = 저자별 명언 카드 리포트(정적 생성 파일)를 서빙한다.
+    """관리자 콘솔 = 저자별 명언 카드 리포트를 서빙한다.
 
     동일 출처에서 열려야 카드의 상태/재번역 버튼이 admin API를 호출할 수 있다.
-    먼저 `python scripts/visualize_authors.py`로 리포트를 생성해 둔다.
+    정적 파일이 없으면(또는 `?refresh=1`이면) 현재 DB로 즉석 생성한다.
     """
     path = os.path.join(os.path.dirname(__file__), "..", "data", "reports", "authors.html")
-    if not os.path.exists(path):
-        return ("리포트가 없습니다. 먼저 `python scripts/visualize_authors.py`를 실행하세요.", 404)
+    if request.args.get("refresh") or not os.path.exists(path):
+        try:
+            import sys
+            sys.path.insert(0, os.path.dirname(__file__))
+            import visualize_authors
+            html = visualize_authors.build_html()
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(html)
+        except Exception as e:
+            return (f"리포트 생성 실패: {e}", 500)
     with open(path, encoding="utf-8") as f:
         return f.read()
 

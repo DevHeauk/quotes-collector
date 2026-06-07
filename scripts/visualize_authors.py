@@ -160,7 +160,7 @@ HTML = """<!DOCTYPE html>
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>저자별 명언 분포</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
@@ -174,11 +174,11 @@ HTML = """<!DOCTYPE html>
   .kpi {{ background:var(--card); border-radius:12px; padding:16px 20px; min-width:140px; }}
   .kpi .v {{ font-size:28px; font-weight:700; }}
   .kpi .l {{ color:var(--muted); font-size:12px; margin-top:2px; }}
-  .grid {{ display:grid; grid-template-columns:1fr 1fr; gap:20px; }}
-  .card {{ background:var(--card); border-radius:12px; padding:20px; }}
+  .grid {{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:20px; }}
+  .card {{ background:var(--card); border-radius:12px; padding:20px; min-width:0; }}
   .card.full {{ grid-column:1 / -1; }}
   .card h2 {{ font-size:14px; margin:0 0 14px; color:var(--fg); font-weight:600; }}
-  canvas {{ max-height:360px; }}
+  canvas {{ max-height:360px; max-width:100%; }}
   table {{ width:100%; border-collapse:collapse; font-size:13px; }}
   th,td {{ text-align:left; padding:6px 8px; border-bottom:1px solid #262a33; }}
   th {{ color:var(--muted); font-weight:500; }}
@@ -282,7 +282,64 @@ HTML = """<!DOCTYPE html>
   .tagchip .c {{ background:#222a3a; color:#9db8ff; border-radius:999px; padding:1px 8px;
                 font-size:11px; font-variant-numeric:tabular-nums; }}
   .tagchip.zero {{ opacity:.5; }}
-  @media(max-width:820px){{ .grid{{grid-template-columns:1fr;}} .tabs{{margin-left:0;width:100%;}} }}
+  @media(max-width:820px){{ .grid{{grid-template-columns:minmax(0,1fr);}} .tabs{{margin-left:0;width:100%;}} }}
+
+  /* ===== 모바일 / 폴더블(Galaxy Z Fold7) 최적화 ===== */
+  /* Fold7 펼침(약 768~900px 정사각형 화면): 카드 폭 제한 해제 */
+  @media(max-width:900px){{ .cards{{max-width:100%;}} }}
+
+  /* 일반 모바일 + Fold7 커버(접힘) */
+  @media(max-width:600px){{
+    body {{ padding:16px 14px;
+            padding-left:max(14px,env(safe-area-inset-left));
+            padding-right:max(14px,env(safe-area-inset-right)); }}
+    h1 {{ font-size:19px; }}
+    .topbar {{ gap:12px; margin-bottom:16px; padding-bottom:14px; }}
+    .topbar h1 {{ width:100%; }}
+    .tokenbar {{ width:100%; gap:8px; }}
+    .tokenbar label {{ flex:1; gap:6px; flex-wrap:wrap; }}
+    .tokenbar input {{ min-width:0; flex:1 1 140px; min-height:42px; }}
+    #tokenSave {{ min-height:42px; }}
+    .tabs {{ width:100%; gap:4px; }}
+    .tabbtn {{ flex:1; text-align:center; padding:11px 8px; font-size:13px; }}
+    .kpis {{ gap:10px; margin-bottom:20px; }}
+    .kpi {{ flex:1 1 calc(50% - 5px); min-width:0; padding:13px 14px; }}
+    .kpi .v {{ font-size:23px; }}
+    .grid {{ gap:14px; }}
+    .card {{ padding:16px 14px; }}
+    canvas {{ max-height:300px; }}
+    /* 넓은 표는 카드 안에서 가로 스크롤 */
+    .card table {{ display:block; overflow-x:auto; white-space:nowrap;
+                   -webkit-overflow-scrolling:touch; }}
+    .filters {{ gap:10px 14px; }}
+    .filters label {{ flex:1 1 calc(50% - 7px); flex-wrap:wrap; }}
+    .filters select, .filters input {{ flex:1 1 90px; min-width:0; min-height:40px; }}
+    .pane-title {{ font-size:16px; }}
+    /* 명언 카드 */
+    .cards {{ gap:14px; }}
+    .qcard {{ padding:18px 16px; gap:16px; }}
+    .qcard .qtext {{ font-size:18px; line-height:1.55; }}
+    .qcard .qorig {{ font-size:14px; }}
+    .qhead {{ flex-direction:column; gap:10px; }}
+    .qactions {{ width:100%; flex-wrap:wrap; }}
+    .qcard .qfoot {{ gap:6px 12px; }}
+    /* 터치 타깃 확대 */
+    .statusbtns {{ flex-wrap:wrap; }}
+    .statusbtns button, .retrans, .qdel, .del-author, .back {{
+        padding:9px 13px; font-size:13px; min-height:40px; }}
+    .pager button {{ padding:10px 16px; min-height:44px; }}
+  }}
+
+  /* Fold7 커버 등 초협소 화면 (≤404px) */
+  @media(max-width:404px){{
+    body {{ padding:12px 10px; }}
+    h1 {{ font-size:18px; }}
+    .qcard {{ padding:16px 13px; }}
+    .qcard .qtext {{ font-size:17px; }}
+    .tabbtn {{ padding:10px 4px; font-size:12px; }}
+    .filters label {{ flex:1 1 100%; }}
+    .qside {{ flex-direction:column; gap:12px; }}
+  }}
 </style>
 </head>
 <body>
@@ -853,7 +910,8 @@ window.addEventListener('hashchange', () => {{
 </html>"""
 
 
-def main():
+def build_html():
+    """현재 DB로 관리자 콘솔 HTML 문자열을 생성해 반환한다 (파일 미저장)."""
     data = collect()
     totals = data["totals"]
     n_quotes = totals["quotes"]
@@ -862,7 +920,7 @@ def main():
         (r["num_authors"] for r in data["per_author"] if r["quotes_per_author"] == 1),
         0,
     )
-    html = HTML.format(
+    return HTML.format(
         n_quotes=n_quotes,
         n_authors=n_authors,
         n_authors_rows=len(data["all_authors"]),
@@ -871,11 +929,13 @@ def main():
         data_json=json.dumps(data, ensure_ascii=False),
     )
 
+
+def main():
+    html = build_html()
     os.makedirs(os.path.dirname(REPORT_PATH), exist_ok=True)
     with open(REPORT_PATH, "w", encoding="utf-8") as f:
         f.write(html)
     print(f"리포트 생성 완료: {REPORT_PATH}")
-    print(f"  명언 {n_quotes}개 / 저자 {n_authors}명")
 
 
 if __name__ == "__main__":
