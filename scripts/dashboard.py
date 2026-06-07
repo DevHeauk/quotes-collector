@@ -15,12 +15,14 @@ from functools import wraps
 import anthropic
 import psycopg2
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, session, redirect
 from flask_cors import CORS
 
 load_dotenv()
 
 app = Flask(__name__)
+# 세션(서명 쿠키)용 시크릿. 미설정 시 ADMIN_TOKEN 기반으로 대체.
+app.secret_key = os.getenv("SECRET_KEY") or os.getenv("ADMIN_TOKEN") or "dev-secret-change-me"
 CORS(app)
 
 
@@ -229,10 +231,11 @@ def require_admin(f):
     def decorated(*args, **kwargs):
         if not ADMIN_TOKEN:
             return jsonify({"error": "ADMIN_TOKEN not configured"}), 500
+        # 웹 콘솔: 세션 로그인 / 모바일 앱·스크립트: Bearer 토큰
         auth = request.headers.get("Authorization", "")
-        if auth != f"Bearer {ADMIN_TOKEN}":
-            return jsonify({"error": "unauthorized"}), 401
-        return f(*args, **kwargs)
+        if session.get("admin") or auth == f"Bearer {ADMIN_TOKEN}":
+            return f(*args, **kwargs)
+        return jsonify({"error": "unauthorized"}), 401
     return decorated
 
 
@@ -490,13 +493,81 @@ def admin_quotes_retranslate(quote_id):
     return jsonify({"text": new_text, "status": "draft", "target": target})
 
 
+def _login_page(error=""):
+    """관리자 로그인 화면 HTML."""
+    err_html = f'<p class="err">{error}</p>' if error else ""
+    return f"""<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>관리자 로그인</title>
+<style>
+  * {{ box-sizing:border-box; }}
+  body {{ margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+         background:#0f1115; color:#e6e8ec;
+         font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif;
+         padding:max(20px,env(safe-area-inset-top)) 20px; }}
+  .box {{ width:100%; max-width:360px; background:#1a1d24; border:1px solid #232733;
+         border-radius:16px; padding:32px 28px; }}
+  h1 {{ font-size:20px; margin:0 0 6px; }}
+  p.sub {{ color:#8a909c; font-size:13px; margin:0 0 24px; }}
+  label {{ display:block; font-size:12px; color:#8a909c; margin-bottom:8px; }}
+  input {{ width:100%; background:#0f1115; color:#e6e8ec; border:1px solid #2c313c;
+          border-radius:10px; padding:13px 14px; font-size:15px; min-height:46px;
+          font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }}
+  input:focus {{ outline:none; border-color:#5b9dff; }}
+  button {{ width:100%; margin-top:16px; background:#5b9dff; color:#0f1115; border:none;
+           border-radius:10px; padding:14px; font-size:15px; font-weight:700; cursor:pointer;
+           min-height:48px; }}
+  button:active {{ opacity:.85; }}
+  .err {{ color:#ff8a8a; font-size:13px; margin:14px 0 0; }}
+</style>
+</head>
+<body>
+  <form class="box" method="POST" action="/admin/login">
+    <h1>관리자 로그인</h1>
+    <p class="sub">명언 관리 콘솔에 접근하려면 토큰을 입력하세요.</p>
+    <label for="token">ADMIN_TOKEN</label>
+    <input id="token" name="token" type="password" autocomplete="current-password"
+           autocapitalize="off" autocorrect="off" spellcheck="false"
+           placeholder="토큰을 입력하세요" autofocus>
+    <button type="submit">로그인</button>
+    {err_html}
+  </form>
+</body>
+</html>"""
+
+
+@app.route("/admin/login", methods=["POST"])
+def admin_login():
+    """토큰 검증 후 세션 로그인."""
+    if not ADMIN_TOKEN:
+        return _login_page("ADMIN_TOKEN이 설정되지 않았습니다."), 500
+    token = (request.form.get("token") or "").strip()
+    if token == ADMIN_TOKEN:
+        session["admin"] = True
+        return redirect("/admin")
+    return _login_page("토큰이 올바르지 않습니다."), 401
+
+
+@app.route("/admin/logout")
+def admin_logout():
+    """세션 로그아웃."""
+    session.pop("admin", None)
+    return redirect("/admin")
+
+
 @app.route("/admin")
 def admin_console():
     """관리자 콘솔 = 저자별 명언 카드 리포트를 서빙한다.
 
+    세션 로그인(토큰 입력)이 있어야 화면이 보인다.
     동일 출처에서 열려야 카드의 상태/재번역 버튼이 admin API를 호출할 수 있다.
     정적 파일이 없으면(또는 `?refresh=1`이면) 현재 DB로 즉석 생성한다.
     """
+    if not session.get("admin"):
+        return _login_page()
     path = os.path.join(os.path.dirname(__file__), "..", "data", "reports", "authors.html")
     if request.args.get("refresh") or not os.path.exists(path):
         try:

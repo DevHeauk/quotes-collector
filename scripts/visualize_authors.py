@@ -193,10 +193,10 @@ HTML = """<!DOCTYPE html>
                     border-radius:8px; padding:7px 11px; font-size:13px; min-width:240px;
                     font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }}
   .tokenbar input:focus {{ outline:none; border-color:var(--accent); }}
-  #tokenSave {{ background:var(--card); color:var(--fg); border:1px solid #2c313c;
-               border-radius:8px; padding:7px 14px; font-size:13px; cursor:pointer; }}
-  #tokenSave:hover {{ border-color:var(--accent); }}
-  #tokenStatus {{ font-size:12px; color:#5bffb0; }}
+  #logoutBtn {{ background:var(--card); color:var(--fg); border:1px solid #2c313c;
+               border-radius:8px; padding:7px 14px; font-size:13px; cursor:pointer;
+               text-decoration:none; display:inline-block; }}
+  #logoutBtn:hover {{ border-color:var(--accent); }}
   tbody tr {{ cursor:pointer; }}
   tbody tr:hover td {{ background:#222633; }}
   /* 저자 상세 페이지 */
@@ -298,8 +298,7 @@ HTML = """<!DOCTYPE html>
     .topbar h1 {{ width:100%; }}
     .tokenbar {{ width:100%; gap:8px; }}
     .tokenbar label {{ flex:1; gap:6px; flex-wrap:wrap; }}
-    .tokenbar input {{ min-width:0; flex:1 1 140px; min-height:42px; }}
-    #tokenSave {{ min-height:42px; }}
+    #logoutBtn {{ min-height:42px; }}
     .tabs {{ width:100%; gap:4px; }}
     .tabbtn {{ flex:1; text-align:center; padding:11px 8px; font-size:13px; }}
     .kpis {{ gap:10px; margin-bottom:20px; }}
@@ -346,12 +345,7 @@ HTML = """<!DOCTYPE html>
 <header class="topbar">
   <h1>명언 관리 콘솔</h1>
   <div class="tokenbar">
-    <label>ADMIN_TOKEN
-      <input id="tokenInput" type="text" autocomplete="off" autocapitalize="off"
-             autocorrect="off" spellcheck="false" placeholder="토큰을 입력하세요">
-    </label>
-    <button id="tokenSave">저장</button>
-    <span id="tokenStatus"></span>
+    <a id="logoutBtn" href="/admin/logout">로그아웃</a>
   </div>
   <nav class="tabs">
     <button class="tabbtn active" data-tab="authors">저자관리</button>
@@ -662,17 +656,15 @@ authorBody.addEventListener('click', e => {{
 }});
 
 async function deleteAuthor(aid) {{
-  const t = adminToken();
-  if (!t) return;
   const a = authorMap[aid];
   const name = a ? a.name : aid;
   if (!confirm(`저자 "${{name}}" 및 그 명언 ${{a ? a.cnt : '?'}}개·관계·로그를 모두 삭제합니다.\\n되돌릴 수 없습니다. 진행할까요?`)) return;
   try {{
     const res = await fetch(`/admin/api/authors/${{aid}}`, {{
-      method: 'DELETE', headers: {{ 'Authorization': 'Bearer ' + t }},
+      method: 'DELETE',
     }});
     const data = await res.json().catch(() => ({{}}));
-    if (res.status === 401) {{ alert('토큰 인증 실패. 토큰을 확인하세요.'); return; }}
+    if (on401(res)) return;
     if (!res.ok) {{ alert('저자 삭제 실패: ' + (data.error || res.status)); return; }}
     DATA.all_authors = DATA.all_authors.filter(x => x.author_id !== aid);
     delete authorMap[aid];
@@ -684,26 +676,14 @@ async function deleteAuthor(aid) {{
 }}
 document.getElementById('backBtn').addEventListener('click', showList);
 
-// --- 관리자 액션: 상태 변경 / 재번역 (동일 출처에서 서빙될 때만 동작) ---
-const tokenInput = document.getElementById('tokenInput');
-const tokenStatus = document.getElementById('tokenStatus');
-tokenInput.value = localStorage.getItem('admin_token') || '';
-document.getElementById('tokenSave').addEventListener('click', () => {{
-  const v = tokenInput.value.trim();
-  localStorage.setItem('admin_token', v);
-  tokenStatus.textContent = v ? '✓ 저장됨' : '비어 있음';
-  setTimeout(() => {{ tokenStatus.textContent = ''; }}, 2000);
-}});
-
-function adminToken() {{
-  const t = tokenInput.value.trim();
-  if (!t) {{
-    alert('상단 ADMIN_TOKEN 입력란에 토큰을 먼저 입력하세요.');
-    tokenInput.focus();
-    return '';
+// --- 관리자 액션: 상태 변경 / 재번역 (세션 인증, 동일 출처 fetch는 쿠키 자동 전송) ---
+function on401(res) {{
+  if (res.status === 401) {{
+    alert('세션이 만료되었습니다. 다시 로그인하세요.');
+    location.href = '/admin';
+    return true;
   }}
-  localStorage.setItem('admin_token', t);
-  return t;
+  return false;
 }}
 
 function patchCardStatus(qid, status) {{
@@ -716,15 +696,13 @@ function patchCardStatus(qid, status) {{
 }}
 
 async function setStatus(qid, status) {{
-  const t = adminToken();
-  if (!t) return;
   try {{
     const res = await fetch(`/admin/api/quotes/${{qid}}`, {{
       method: 'PATCH',
-      headers: {{ 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + t }},
+      headers: {{ 'Content-Type': 'application/json' }},
       body: JSON.stringify({{ status }}),
     }});
-    if (res.status === 401) {{ localStorage.removeItem('admin_token'); alert('토큰 인증 실패. 다시 입력하세요.'); return; }}
+    if (on401(res)) return;
     if (!res.ok) {{ alert('상태 변경 실패: ' + res.status); return; }}
     if (quoteById[qid]) quoteById[qid].status = status;
     patchCardStatus(qid, status);
@@ -732,18 +710,16 @@ async function setStatus(qid, status) {{
 }}
 
 async function retranslate(qid) {{
-  const t = adminToken();
-  if (!t) return;
   if (!confirm('원문을 LLM으로 재번역하고 상태를 draft로 초기화합니다. 진행할까요?')) return;
   const card = cardGrid.querySelector(`.qcard[data-qid="${{qid}}"]`);
   const btn = card && card.querySelector('.retrans');
   if (btn) {{ btn.disabled = true; btn.textContent = '번역 중…'; }}
   try {{
     const res = await fetch(`/admin/api/quotes/${{qid}}/retranslate`, {{
-      method: 'POST', headers: {{ 'Authorization': 'Bearer ' + t }},
+      method: 'POST',
     }});
     const data = await res.json().catch(() => ({{}}));
-    if (res.status === 401) {{ localStorage.removeItem('admin_token'); alert('토큰 인증 실패. 다시 입력하세요.'); return; }}
+    if (on401(res)) return;
     if (!res.ok) {{ alert('재번역 실패: ' + (data.error || res.status)); return; }}
     if (quoteById[qid]) {{ quoteById[qid].text = data.text; quoteById[qid].status = data.status; }}
     const tEl = card && card.querySelector('.qtext');
@@ -755,30 +731,26 @@ async function retranslate(qid) {{
 
 async function setImpact(qid, val) {{
   if (val === '') return;
-  const t = adminToken();
-  if (!t) return;
   try {{
     const res = await fetch(`/admin/api/quotes/${{qid}}`, {{
       method: 'PATCH',
-      headers: {{ 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + t }},
+      headers: {{ 'Content-Type': 'application/json' }},
       body: JSON.stringify({{ impact_score: Number(val) }}),
     }});
-    if (res.status === 401) {{ alert('토큰 인증 실패. 토큰을 확인하세요.'); return; }}
+    if (on401(res)) return;
     if (!res.ok) {{ alert('임팩트 변경 실패: ' + res.status); return; }}
     if (quoteById[qid]) quoteById[qid].impact_score = Number(val);
   }} catch (e) {{ alert('네트워크 오류: ' + e.message); }}
 }}
 
 async function deleteQuote(qid) {{
-  const t = adminToken();
-  if (!t) return;
   if (!confirm('이 명언을 삭제합니다. 되돌릴 수 없습니다. 진행할까요?')) return;
   const aid = quoteById[qid] && quoteById[qid].author_id;
   try {{
     const res = await fetch(`/admin/api/quotes/${{qid}}`, {{
-      method: 'DELETE', headers: {{ 'Authorization': 'Bearer ' + t }},
+      method: 'DELETE',
     }});
-    if (res.status === 401) {{ alert('토큰 인증 실패. 토큰을 확인하세요.'); return; }}
+    if (on401(res)) return;
     if (!res.ok) {{ alert('명언 삭제 실패: ' + res.status); return; }}
     delete quoteById[qid];
     if (aid && quotesByAuthor[aid]) quotesByAuthor[aid] = quotesByAuthor[aid].filter(x => x.id !== qid);
