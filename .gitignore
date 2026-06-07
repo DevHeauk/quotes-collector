@@ -4,3 +4,5 @@ __pycache__/
 data/trends/*.json
 data/reports/
 .DS_Store
+
+.idea/

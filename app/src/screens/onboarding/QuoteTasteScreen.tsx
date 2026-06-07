@@ -3,9 +3,10 @@ import {View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView,
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {colors} from '../../constants/colors';
 import Icon from 'react-native-vector-icons/Ionicons';
-import {fetchRecommend} from '../../api/client';
+import {fetchRecommend, savePreferencesToServer} from '../../api/client';
 import {savePreference} from '../../storage/preferences';
 import {addFavorite} from '../../storage/favorites';
+import {getDeviceId} from '../../storage/deviceId';
 import type {Quote} from '../../types';
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 import type {OnboardingStackParamList} from '../../types/navigation';
@@ -55,6 +56,8 @@ export function QuoteTasteScreen({navigation, route}: Props) {
       for (const id of liked) {
         await addFavorite(id);
       }
+      const deviceId = await getDeviceId();
+      savePreferencesToServer(deviceId, needs).catch(() => {});
       navigation.reset({index: 0, routes: [{name: 'Main'}]});
     } catch (e) {
       Alert.alert('오류', '설정 저장에 실패했습니다. 다시 시도해 주세요.');

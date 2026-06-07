@@ -90,15 +90,15 @@ export function QuoteDetailScreen({navigation, route}: Props) {
 
       <View style={styles.actions}>
         <TouchableOpacity style={styles.actionBtn} onPress={() => toggle(quote.id)}>
-          <Icon name={fav ? 'thumbs-up' : 'thumbs-up-outline'} size={26} color={fav ? colors.success : colors.textSecondary} />
+          <Icon name={fav ? 'thumbs-up' : 'thumbs-up-outline'} size={20} color={fav ? colors.success : colors.textSecondary} />
           <Text style={styles.actionLabel}>좋아요</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.actionBtn} onPress={handleDislike}>
-          <Icon name="thumbs-down-outline" size={26} color={colors.textSecondary} />
+          <Icon name="thumbs-down-outline" size={20} color={colors.textSecondary} />
           <Text style={styles.actionLabel}>별로예요</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.actionBtn} onPress={handleShare}>
-          <Icon name="share-outline" size={26} color={colors.textSecondary} />
+          <Icon name="share-outline" size={20} color={colors.textSecondary} />
           <Text style={styles.actionLabel}>공유</Text>
         </TouchableOpacity>
       </View>

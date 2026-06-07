@@ -1,12 +1,11 @@
-import React, {useEffect, useState, useCallback} from 'react';
-import {View, FlatList, Text, TextInput, StyleSheet, ActivityIndicator, TouchableOpacity, Alert} from 'react-native';
+import React, {useState, useCallback} from 'react';
+import {View, FlatList, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Alert} from 'react-native';
 import {colors} from '../constants/colors';
 import Icon from 'react-native-vector-icons/Ionicons';
 import {fetchQuotesBatch} from '../api/client';
 import {QuoteCard} from '../components/QuoteCard';
 import {useFavorites} from '../hooks/useFavorites';
 import {clearPreference} from '../storage/preferences';
-import {getAdminToken, setAdminToken, clearAdminToken} from '../storage/admin';
 import type {Quote} from '../types';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {useFocusEffect, CommonActions} from '@react-navigation/native';
@@ -33,37 +32,6 @@ export function FavoritesScreen({navigation}: {navigation: NativeStackNavigation
         .finally(() => setLoading(false));
     }, [ids])
   );
-
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [tokenInput, setTokenInput] = useState('');
-  const [showTokenInput, setShowTokenInput] = useState(false);
-
-  useEffect(() => {
-    getAdminToken().then(t => setIsAdmin(!!t));
-  }, []);
-
-  const handleAdminToggle = () => {
-    if (isAdmin) {
-      Alert.alert('관리자 모드 해제', '관리자 모드를 해제하시겠습니까?', [
-        {text: '취소', style: 'cancel'},
-        {text: '해제', onPress: async () => {
-          await clearAdminToken();
-          setIsAdmin(false);
-        }},
-      ]);
-    } else {
-      setShowTokenInput(true);
-    }
-  };
-
-  const handleTokenSubmit = async () => {
-    if (tokenInput.trim()) {
-      await setAdminToken(tokenInput.trim());
-      setIsAdmin(true);
-      setShowTokenInput(false);
-      setTokenInput('');
-    }
-  };
 
   const handleResetPreference = () => {
     Alert.alert(
@@ -94,36 +62,9 @@ export function FavoritesScreen({navigation}: {navigation: NativeStackNavigation
       data={quotes}
       keyExtractor={item => item.id}
       ListHeaderComponent={
-        <View>
-          <View style={styles.headerRow}>
-            <TouchableOpacity style={styles.resetBtn} onPress={handleResetPreference}>
-              <Text style={styles.resetText}>관심사 다시 설정</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.resetBtn, isAdmin && styles.adminActiveBtn]}
-              onPress={handleAdminToggle}>
-              <Text style={[styles.resetText, isAdmin && styles.adminActiveText]}>
-                {isAdmin ? '관리자 ON' : '관리자'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-          {showTokenInput && (
-            <View style={styles.tokenRow}>
-              <TextInput
-                style={styles.tokenInput}
-                placeholder="관리자 토큰 입력"
-                placeholderTextColor={colors.textMuted}
-                value={tokenInput}
-                onChangeText={setTokenInput}
-                secureTextEntry
-                autoFocus
-              />
-              <TouchableOpacity style={styles.tokenSubmitBtn} onPress={handleTokenSubmit}>
-                <Text style={styles.tokenSubmitText}>확인</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
+        <TouchableOpacity style={styles.resetBtn} onPress={handleResetPreference}>
+          <Text style={styles.resetText}>관심사 다시 설정</Text>
+        </TouchableOpacity>
       }
       renderItem={({item}) => (
         <QuoteCard
@@ -147,44 +88,17 @@ export function FavoritesScreen({navigation}: {navigation: NativeStackNavigation
 const styles = StyleSheet.create({
   container: {flex: 1, backgroundColor: colors.background},
   center: {flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background},
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  resetBtn: {
+    alignSelf: 'flex-end',
     marginHorizontal: 16,
     marginTop: 12,
     marginBottom: 4,
-  },
-  resetBtn: {
     paddingHorizontal: 14,
     paddingVertical: 8,
     backgroundColor: colors.surface,
     borderRadius: 10,
   },
   resetText: {color: colors.textSecondary, fontSize: 13},
-  adminActiveBtn: {backgroundColor: colors.heart},
-  adminActiveText: {color: colors.text, fontWeight: '600'},
-  tokenRow: {
-    flexDirection: 'row',
-    marginHorizontal: 16,
-    marginTop: 8,
-    gap: 8,
-  },
-  tokenInput: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    color: colors.text,
-    fontSize: 13,
-  },
-  tokenSubmitBtn: {
-    backgroundColor: colors.primary,
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    justifyContent: 'center',
-  },
-  tokenSubmitText: {color: colors.text, fontSize: 13, fontWeight: '600'},
   empty: {alignItems: 'center', marginTop: 80},
   emptyIcon: {fontSize: 48, color: colors.heartInactive},
   emptyText: {color: colors.textSecondary, fontSize: 16, marginTop: 16},

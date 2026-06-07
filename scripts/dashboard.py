@@ -1489,6 +1489,11 @@ def app_quotes_batch():
 # Dashboard HTML
 # ===========================================================================
 
+@app.route("/healthz")
+def healthz():
+    return jsonify({"status": "ok"})
+
+
 @app.route("/")
 def index():
     return """<!DOCTYPE html>

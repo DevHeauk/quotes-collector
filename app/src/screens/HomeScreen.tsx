@@ -86,7 +86,7 @@ export function HomeScreen({navigation}: {navigation: NativeStackNavigationProp<
         const more = await fetchRecommend({
           ...(prefRef.current || {}),
           exclude: daily.id,
-          limit: '4',
+          limit: '9',
         });
         const fresh = more.filter(q => !seenIdsRef.current.has(q.id));
         fresh.forEach(q => seenIdsRef.current.add(q.id));
@@ -107,7 +107,7 @@ export function HomeScreen({navigation}: {navigation: NativeStackNavigationProp<
       const more = await fetchRecommend({
         ...(prefRef.current || {}),
         exclude,
-        limit: '3',
+        limit: '5',
       });
       const fresh = more.filter(q => !seenIdsRef.current.has(q.id));
       fresh.forEach(q => seenIdsRef.current.add(q.id));
@@ -130,9 +130,8 @@ export function HomeScreen({navigation}: {navigation: NativeStackNavigationProp<
       duration: SWIPE_OUT_DURATION,
       useNativeDriver: true,
     }).start(() => {
-      // swipeCallbackRef에서 최신 상태 접근
       swipeCallbackRef.current?.(direction);
-      position.setValue({x: 0, y: 0});
+      requestAnimationFrame(() => position.setValue({x: 0, y: 0}));
     });
   }, [position]);
 
@@ -180,7 +179,7 @@ export function HomeScreen({navigation}: {navigation: NativeStackNavigationProp<
       }
       setCurrentIndex(prev => {
         const next = prev + 1;
-        if (quotes.length - next <= 2) loadMore();
+        if (quotes.length - next <= 4) loadMore();
         return next;
       });
     };
@@ -203,7 +202,7 @@ export function HomeScreen({navigation}: {navigation: NativeStackNavigationProp<
             useNativeDriver: true,
           }).start(() => {
             swipeCallbackRef.current?.('left');
-            position.setValue({x: 0, y: 0});
+            requestAnimationFrame(() => position.setValue({x: 0, y: 0}));
           });
         } else if (gs.dx > SWIPE_THRESHOLD) {
           const toX = SCREEN_WIDTH * 1.5;
@@ -213,7 +212,7 @@ export function HomeScreen({navigation}: {navigation: NativeStackNavigationProp<
             useNativeDriver: true,
           }).start(() => {
             swipeCallbackRef.current?.('right');
-            position.setValue({x: 0, y: 0});
+            requestAnimationFrame(() => position.setValue({x: 0, y: 0}));
           });
         } else {
           Animated.spring(position, {
@@ -334,31 +333,32 @@ export function HomeScreen({navigation}: {navigation: NativeStackNavigationProp<
               {...panResponder.panHandlers}>
               {/* LIKE 스탬프 */}
               <Animated.View style={[styles.stamp, styles.likeStamp, {opacity: likeOpacity}]}>
-                <Text style={styles.likeStampText}>LIKE</Text>
+                <Icon name="heart" size={22} color={colors.success} />
               </Animated.View>
 
               {/* NOPE 스탬프 */}
               <Animated.View style={[styles.stamp, styles.nopeStamp, {opacity: nopeOpacity}]}>
-                <Text style={styles.nopeStampText}>NOPE</Text>
+                <Icon name="close" size={22} color={colors.heart} />
               </Animated.View>
 
               <TouchableOpacity
                 activeOpacity={0.9}
                 onPress={() => navigation.navigate('QuoteDetail', {quoteId: quote.id})}
                 style={styles.cardContent}>
-                <Text style={styles.quoteText}>"{quote.text}"</Text>
+                <Text style={styles.quoteText}>{quote.text}</Text>
                 {quote.text_original && quote.text_original !== quote.text && (
                   <Text style={styles.originalText}>{quote.text_original}</Text>
                 )}
-                <Text style={styles.authorName}>— {quote.author?.name}</Text>
+                <View style={styles.authorDivider} />
+                <Text style={styles.authorName}>{quote.author?.name}</Text>
                 {quote.author?.profession && (
                   <Text style={styles.profession}>{quote.author.profession}</Text>
                 )}
                 {quote.keywords && quote.keywords.length > 0 && (
                   <View style={styles.tags}>
-                    {quote.keywords.slice(0, 4).map(k => (
+                    {quote.keywords.slice(0, 3).map(k => (
                       <View key={k} style={styles.tag}>
-                        <Text style={styles.tagText}>#{k}</Text>
+                        <Text style={styles.tagText}>{k}</Text>
                       </View>
                     ))}
                   </View>
@@ -380,7 +380,7 @@ export function HomeScreen({navigation}: {navigation: NativeStackNavigationProp<
               },
             ]}>
             <View style={styles.cardContent}>
-              <Text style={styles.quoteText} numberOfLines={4}>"{quote.text}"</Text>
+              <Text style={styles.quoteText} numberOfLines={4}>{quote.text}</Text>
               <Text style={styles.authorName}>— {quote.author?.name}</Text>
             </View>
           </View>
@@ -496,11 +496,10 @@ const styles = StyleSheet.create({
   errorText: {color: colors.textSecondary, fontSize: 16},
   label: {
     color: colors.textMuted,
-    fontSize: 14,
+    fontSize: 13,
     textAlign: 'center',
     marginBottom: 16,
-    letterSpacing: 2,
-    textTransform: 'uppercase',
+    letterSpacing: 4,
   },
   milestoneBanner: {
     backgroundColor: colors.primaryDark,
@@ -528,12 +527,14 @@ const styles = StyleSheet.create({
     width: SCREEN_WIDTH - 40,
     minHeight: CARD_HEIGHT,
     backgroundColor: colors.surface,
-    borderRadius: 24,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 8},
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 12,
+    shadowOffset: {width: 0, height: 4},
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 8,
     overflow: 'hidden',
   },
   cardTop: {
@@ -541,7 +542,8 @@ const styles = StyleSheet.create({
   },
   cardContent: {
     flex: 1,
-    padding: 32,
+    paddingHorizontal: 28,
+    paddingVertical: 40,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -550,57 +552,52 @@ const styles = StyleSheet.create({
   stamp: {
     position: 'absolute',
     zIndex: 20,
-    borderWidth: 3,
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   likeStamp: {
-    top: 28,
-    left: 24,
-    borderColor: colors.success,
-    transform: [{rotate: '-15deg'}],
-  },
-  likeStampText: {
-    color: colors.success,
-    fontSize: 28,
-    fontWeight: '800',
-    letterSpacing: 3,
+    top: 20,
+    left: 20,
+    backgroundColor: 'rgba(74, 222, 128, 0.15)',
   },
   nopeStamp: {
-    top: 28,
-    right: 24,
-    borderColor: colors.heart,
-    transform: [{rotate: '15deg'}],
-  },
-  nopeStampText: {
-    color: colors.heart,
-    fontSize: 28,
-    fontWeight: '800',
-    letterSpacing: 3,
+    top: 20,
+    right: 20,
+    backgroundColor: 'rgba(244, 63, 94, 0.15)',
   },
 
   // 카드 내용
   quoteText: {
     color: colors.text,
-    fontSize: 20,
-    lineHeight: 34,
+    fontSize: 19,
+    lineHeight: 32,
     textAlign: 'center',
-    fontWeight: '300',
-    letterSpacing: 0.3,
+    fontWeight: '400',
+    letterSpacing: 0.2,
   },
   originalText: {
     color: colors.textMuted,
     fontSize: 13,
     textAlign: 'center',
-    marginTop: 12,
+    marginTop: 14,
     fontStyle: 'italic',
+    lineHeight: 20,
+  },
+  authorDivider: {
+    width: 24,
+    height: 1,
+    backgroundColor: colors.surfaceLight,
+    marginTop: 28,
+    marginBottom: 16,
   },
   authorName: {
-    color: colors.primary,
-    fontSize: 15,
-    fontWeight: '600',
-    marginTop: 24,
+    color: colors.textSecondary,
+    fontSize: 14,
+    fontWeight: '500',
+    letterSpacing: 0.5,
   },
   profession: {
     color: colors.textMuted,
@@ -615,15 +612,13 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   tag: {
-    backgroundColor: 'rgba(56, 189, 248, 0.1)',
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
   },
   tagText: {
-    color: colors.primary,
-    fontSize: 12,
-    fontWeight: '500',
+    color: colors.textMuted,
+    fontSize: 11,
   },
 
   // 힌트 오버레이
@@ -678,19 +673,20 @@ const styles = StyleSheet.create({
   bottomActions: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 32,
-    paddingBottom: 24,
-    paddingTop: 16,
+    alignItems: 'center',
+    gap: 24,
+    paddingBottom: 28,
+    paddingTop: 12,
   },
   bottomBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.surfaceLight,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
   },
   bottomBtnDisabled: {
-    opacity: 0.4,
+    opacity: 0.3,
   },
 });
