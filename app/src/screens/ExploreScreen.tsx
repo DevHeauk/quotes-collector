@@ -1,6 +1,7 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, ActivityIndicator, Alert} from 'react-native';
 import {colors} from '../constants/colors';
+import {ResponsiveContainer} from '../components/ResponsiveContainer';
 import {fetchCategories, fetchSituations, fetchAuthors} from '../api/client';
 import {getAdminToken, setAdminToken, clearAdminToken} from '../storage/admin';
 import type {CategoryGroup, SituationGroup, AuthorListItem} from '../types';
@@ -76,7 +77,7 @@ export function ExploreScreen({navigation}: {navigation: NativeStackNavigationPr
   };
 
   return (
-    <View style={styles.container}>
+    <ResponsiveContainer style={styles.container}>
       {showTokenInput && (
         <View style={styles.tokenRow}>
           <TextInput
@@ -165,7 +166,7 @@ export function ExploreScreen({navigation}: {navigation: NativeStackNavigationPr
           )}
         />
       )}
-    </View>
+    </ResponsiveContainer>
   );
 }
 

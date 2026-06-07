@@ -3,6 +3,7 @@ import {View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView,
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {colors} from '../../constants/colors';
 import Icon from 'react-native-vector-icons/Ionicons';
+import {ResponsiveContainer} from '../../components/ResponsiveContainer';
 import {fetchRecommend, savePreferencesToServer} from '../../api/client';
 import {savePreference} from '../../storage/preferences';
 import {addFavorite} from '../../storage/favorites';
@@ -88,6 +89,7 @@ export function QuoteTasteScreen({navigation, route}: Props) {
 
   return (
     <SafeAreaView style={styles.container}>
+      <ResponsiveContainer style={styles.inner}>
       <View style={styles.header}>
         <Text style={styles.step}>2 / 2</Text>
         <Text style={styles.title}>마음에 드는 명언을{'\n'}골라보세요</Text>
@@ -120,12 +122,14 @@ export function QuoteTasteScreen({navigation, route}: Props) {
       <TouchableOpacity style={styles.startBtn} onPress={handleComplete} disabled={saving}>
         <Text style={styles.startText}>{saving ? '설정 중...' : '시작하기'}</Text>
       </TouchableOpacity>
+      </ResponsiveContainer>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {flex: 1, backgroundColor: colors.background, padding: 24},
+  container: {flex: 1, backgroundColor: colors.background},
+  inner: {padding: 24},
   center: {flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background},
   loadingText: {color: colors.textMuted, fontSize: 14, marginTop: 16},
   errorText: {color: colors.textMuted, fontSize: 16, marginBottom: 16},
