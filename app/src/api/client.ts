@@ -50,6 +50,14 @@ export function fetchQuotesBatch(ids: string[]): Promise<Quote[]> {
   });
 }
 
+export function savePreferencesToServer(deviceId: string, needs: string[]): Promise<{status: string}> {
+  return fetchJSON<{status: string}>(`${BASE}/preferences`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({device_id: deviceId, needs}),
+  });
+}
+
 export async function adminDeleteQuote(quoteId: string, token: string): Promise<void> {
   const res = await fetch(`${API_BASE_URL}/admin/api/quotes/${quoteId}`, {
     method: 'DELETE',
